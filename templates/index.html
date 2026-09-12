@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veterinaria PawCare</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #0f1f1c; color: #f3f4f6; margin: 0; padding: 2rem; }
+        h1 { text-align: center; }
+        .subtitulo { text-align: center; color: #9ca3af; margin-top: -.5rem; margin-bottom: 1.5rem; }
+        .servicios { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 2rem auto; max-width: 1000px; }
+        .card { background: #16302b; border-radius: 12px; padding: 1rem; text-align: center; display: flex; flex-direction: column; }
+        .card .icono { font-size: 2rem; }
+        .card .precio { color: #34d399; font-weight: bold; margin-top: .5rem; }
+        .card .stock { margin-top: .5rem; font-size: .9rem; color: #9ca3af; }
+        .card .stock strong { color: #f3f4f6; }
+        .card .acciones { display: flex; flex-direction: column; gap: .5rem; margin-top: .75rem; }
+        .card button { padding: .6rem; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background .2s; }
+        .card .btn-comprar { background: #34d399; color: #0f1f1c; }
+        .card .btn-comprar:hover:not(:disabled) { background: #10b981; }
+        .card .btn-comprar:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; }
+        .card .btn-editar { background: #3b82f6; color: #ffffff; }
+        .card .btn-editar:hover { background: #2563eb; }
+        .card .btn-eliminar { background: #ef4444; color: #ffffff; }
+        .card .btn-eliminar:hover { background: #dc2626; }
+        .card.agotado { opacity: .6; }
+
+        /* Modal de edición */
+        .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); align-items: center; justify-content: center; z-index: 10; }
+        .overlay.activo { display: flex; }
+        .modal { background: #16302b; border-radius: 12px; padding: 1.5rem; width: 90%; max-width: 380px; }
+        .modal h2 { margin-top: 0; }
+        .modal label { display: block; margin-top: .75rem; font-size: .85rem; color: #9ca3af; }
+        .modal input { width: 100%; box-sizing: border-box; padding: .5rem; margin-top: .25rem; border-radius: 6px; border: 1px solid #274740; background: #0f1f1c; color: #f3f4f6; }
+        .modal .modal-botones { display: flex; gap: .5rem; margin-top: 1.25rem; }
+        .modal .modal-botones button { flex: 1; }
+        .modal .btn-guardar { background: #34d399; color: #0f1f1c; }
+        .modal .btn-guardar:hover { background: #10b981; }
+        .modal .btn-cancelar { background: #4b5563; color: #f3f4f6; }
+        .modal .btn-cancelar:hover { background: #374151; }
+    </style>
+</head>
+<body>
+    <h1>🐾 Veterinaria PawCare</h1>
+    <p class="subtitulo">Servicios y productos para el cuidado de tu mascota</p>
+    <div class="servicios">
+        {% for servicio in servicios %}
+        <div class="card" data-id="{{ servicio.id }}">
+            <div class="icono">{{ servicio.icono }}</div>
+            <h3 class="nombre">{{ servicio.nombre }}</h3>
+            <p class="descripcion">{{ servicio.descripcion }}</p>
+            <div class="precio">${{ servicio.precio }}</div>
+            <div class="stock">Cupos disponibles: <strong class="stock-valor">{{ servicio.stock }}</strong></div>
+            <div class="acciones">
+                <button class="btn-comprar" {% if servicio.stock <= 0 %}disabled{% endif %}>
+                    {% if servicio.stock <= 0 %}Sin cupos{% else %}Reservar{% endif %}
+                </button>
+                <button class="btn-editar">✏️ Editar</button>
+                <button class="btn-eliminar">🗑️ Eliminar</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Modal de edición -->
+    <div class="overlay" id="overlay">
+        <div class="modal">
+            <h2>Editar servicio</h2>
+            <label>Nombre
+                <input type="text" id="edit-nombre">
+            </label>
+            <label>Descripción
+                <input type="text" id="edit-descripcion">
+            </label>
+            <label>Precio
+                <input type="text" id="edit-precio">
+            </label>
+            <label>Icono (emoji)
+                <input type="text" id="edit-icono">
+            </label>
+            <label>Cupos disponibles
+                <input type="number" id="edit-stock" min="0">
+            </label>
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btn-cancelar">Cancelar</button>
+                <button class="btn-guardar" id="btn-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const overlay = document.getElementById('overlay');
+        let cardEnEdicion = null; // guarda referencia a la card que se está editando
+
+        // --- Reservar ---
+        document.querySelectorAll('.btn-comprar').forEach(function (boton) {
+            boton.addEventListener('click', function () {
+                const card = boton.closest('.card');
+                const id = card.dataset.id;
+                reservar(id, boton, card);
+            });
+        });
+
+        async function reservar(id, boton, card) {
+            boton.disabled = true; // evita doble clic mientras responde el servidor
+
+            try {
+                const res = await fetch(`/api/servicios/${id}/reservar`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.estado === 'exito') {
+                    const nuevoStock = data.datos.stock;
+                    card.querySelector('.stock-valor').textContent = nuevoStock;
+
+                    if (nuevoStock <= 0) {
+                        boton.textContent = 'Sin cupos';
+                        card.classList.add('agotado');
+                    } else {
+                        boton.disabled = false;
+                    }
+                } else {
+                    alert(data.mensaje);
+                    boton.disabled = false;
+                }
+            } catch (err) {
+                alert('No se pudo conectar con el servidor.');
+                boton.disabled = false;
+            }
+        }
+
+        // --- Editar (abre modal) ---
+        document.querySelectorAll('.btn-editar').forEach(function (boton) {
+            boton.addEventListener('click', function () {
+                cardEnEdicion = boton.closest('.card');
+
+                document.getElementById('edit-nombre').value = cardEnEdicion.querySelector('.nombre').textContent.trim();
+                document.getElementById('edit-descripcion').value = cardEnEdicion.querySelector('.descripcion').textContent.trim();
+                document.getElementById('edit-precio').value = cardEnEdicion.querySelector('.precio').textContent.replace('$', '').trim();
+                document.getElementById('edit-icono').value = cardEnEdicion.querySelector('.icono').textContent.trim();
+                document.getElementById('edit-stock').value = cardEnEdicion.querySelector('.stock-valor').textContent.trim();
+
+                overlay.classList.add('activo');
+            });
+        });
+
+        document.getElementById('btn-cancelar').addEventListener('click', function () {
+            overlay.classList.remove('activo');
+            cardEnEdicion = null;
+        });
+
+        document.getElementById('btn-guardar').addEventListener('click', async function () {
+            if (!cardEnEdicion) return;
+            const id = cardEnEdicion.dataset.id;
+
+            const cuerpo = {
+                nombre: document.getElementById('edit-nombre').value,
+                descripcion: document.getElementById('edit-descripcion').value,
+                precio: document.getElementById('edit-precio').value,
+                icono: document.getElementById('edit-icono').value,
+                stock: parseInt(document.getElementById('edit-stock').value, 10) || 0
+            };
+
+            try {
+                const res = await fetch(`/api/servicios/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(cuerpo)
+                });
+                const data = await res.json();
+
+                if (data.estado === 'exito') {
+                    const s = data.datos;
+                    cardEnEdicion.querySelector('.icono').textContent = s.icono;
+                    cardEnEdicion.querySelector('.nombre').textContent = s.nombre;
+                    cardEnEdicion.querySelector('.descripcion').textContent = s.descripcion;
+                    cardEnEdicion.querySelector('.precio').textContent = `$${s.precio}`;
+                    cardEnEdicion.querySelector('.stock-valor').textContent = s.stock;
+
+                    const btnComprar = cardEnEdicion.querySelector('.btn-comprar');
+                    if (s.stock <= 0) {
+                        btnComprar.disabled = true;
+                        btnComprar.textContent = 'Sin cupos';
+                        cardEnEdicion.classList.add('agotado');
+                    } else {
+                        btnComprar.disabled = false;
+                        btnComprar.textContent = 'Reservar';
+                        cardEnEdicion.classList.remove('agotado');
+                    }
+
+                    overlay.classList.remove('activo');
+                    cardEnEdicion = null;
+                } else {
+                    alert(data.mensaje);
+                }
+            } catch (err) {
+                alert('No se pudo conectar con el servidor.');
+            }
+        });
+
+        // --- Eliminar ---
+        document.querySelectorAll('.btn-eliminar').forEach(function (boton) {
+            boton.addEventListener('click', async function () {
+                const card = boton.closest('.card');
+                const id = card.dataset.id;
+
+                if (!confirm('¿Seguro que quieres eliminar este servicio?')) return;
+
+                try {
+                    const res = await fetch(`/api/servicios/${id}`, { method: 'DELETE' });
+                    const data = await res.json();
+
+                    if (data.estado === 'exito') {
+                        card.remove();
+                    } else {
+                        alert(data.mensaje);
+                    }
+                } catch (err) {
+                    alert('No se pudo conectar con el servidor.');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
