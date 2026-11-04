@@ -1,174 +1,211 @@
+import re
+
 from flask import Flask, jsonify, render_template, request
 
+import db
 
 app = Flask(__name__)
 
-SERVICIOS = [
-    {
-        "id": 1,
-        "nombre": "Consulta General Veterinaria",
-        "descripcion": "Revisión médica completa a cargo de un veterinario certificado.",
-        "precio": "80.000",
-        "icono": "🩺",
-        "stock": 12
-    },
-    {
-        "id": 2,
-        "nombre": "Vacuna Antirrábica",
-        "descripcion": "Aplicación de vacuna antirrábica para perros y gatos.",
-        "precio": "60.000",
-        "icono": "💉",
-        "stock": 25
-    },
-    {
-        "id": 3,
-        "nombre": "Baño y Peluquería Canina",
-        "descripcion": "Baño medicado, corte de pelo y limpieza de oídos.",
-        "precio": "55.000",
-        "icono": "🛁",
-        "stock": 10
-    },
-    {
-        "id": 4,
-        "nombre": "Desparasitación Interna y Externa",
-        "descripcion": "Tratamiento antiparasitario para perros y gatos de cualquier edad.",
-        "precio": "45.000",
-        "icono": "💊",
-        "stock": 20
-    },
-    {
-        "id": 5,
-        "nombre": "Alimento Premium para Perros 15kg",
-        "descripcion": "Nutrición balanceada para perros adultos de todas las razas.",
-        "precio": "189.900",
-        "icono": "🐶",
-        "stock": 14
-    },
-    {
-        "id": 6,
-        "nombre": "Alimento Premium para Gatos 10kg",
-        "descripcion": "Fórmula especial para el cuidado renal y urinario felino.",
-        "precio": "159.900",
-        "icono": "🐱",
-        "stock": 16
-    },
-    {
-        "id": 7,
-        "nombre": "Kit de Primeros Auxilios para Mascotas",
-        "descripcion": "Vendas, antisépticos y elementos básicos para emergencias.",
-        "precio": "69.900",
-        "icono": "🩹",
-        "stock": 18
-    },
-    {
-        "id": 8,
-        "nombre": "Transportadora para Mascotas",
-        "descripcion": "Resistente y ventilada, ideal para viajes y visitas al veterinario.",
-        "precio": "129.900",
-        "icono": "🧳",
-        "stock": 9
-    },
-    {
-        "id": 9,
-        "nombre": "Juguete Interactivo para Mascotas",
-        "descripcion": "Estimula la mente de tu mascota y reduce la ansiedad.",
-        "precio": "34.900",
-        "icono": "🎾",
-        "stock": 30
-    },
-    {
-        "id": 10,
-        "nombre": "Cirugía Menor (Esterilización)",
-        "descripcion": "Procedimiento quirúrgico ambulatorio con seguimiento post-operatorio.",
-        "precio": "250.000",
-        "icono": "🏥",
-        "stock": 4
+# La página muestra servicios y productos en una sola lista, pero en la base de datos
+# viven en dos tablas. Para que los ids no choquen, cada item usa un prefijo:
+#   "S1" = CATALOGO_SERVICIOS.ID_CataServicio = 1
+#   "P1" = PRODUCTOS.ID_Producto = 1
+# (Los nombres de tabla/columna salen de este diccionario fijo, nunca del usuario.)
+TABLAS = {
+    "S": {"tabla": "CATALOGO_SERVICIOS", "pk": "ID_CataServicio",
+          "nombre": "Servicio", "precio": "CostoServicio", "stock": "Cupos"},
+    "P": {"tabla": "PRODUCTOS", "pk": "ID_Producto",
+          "nombre": "TipoProducto", "precio": "ValorProducto", "stock": "Stock"},
+}
+
+CAMPOS_REQUERIDOS = ['nombre', 'descripcion', 'precio', 'icono', 'stock']
+
+
+# ---------- Utilidades ----------
+def _resolver_id(item_id):
+    """'S3' -> ('S', 3). Devuelve None si el id no es válido."""
+    if len(item_id) < 2 or not item_id[1:].isdigit():
+        return None
+    prefijo = item_id[0].upper()
+    if prefijo not in TABLAS:
+        return None
+    return prefijo, int(item_id[1:])
+
+
+def _formatear_precio(valor):
+    # 80000 -> "80.000"
+    return f"{int(valor):,}".replace(",", ".")
+
+
+def _select(prefijo):
+    t = TABLAS[prefijo]
+    return (
+        f"SELECT {t['pk']} AS num, {t['nombre']} AS nombre, Descripcion AS descripcion, "
+        f"{t['precio']} AS precio, Icono AS icono, {t['stock']} AS stock "
+        f"FROM {t['tabla']}"
+    )
+
+
+def _a_item(prefijo, fila):
+    return {
+        "id": f"{prefijo}{fila['num']}",
+        "nombre": fila["nombre"],
+        "descripcion": fila["descripcion"],
+        "precio": _formatear_precio(fila["precio"]),
+        "icono": fila["icono"],
+        "stock": fila["stock"],
     }
-]
 
 
+def listar_items():
+    items = []
+    for prefijo, t in TABLAS.items():
+        filas = db.consultar(_select(prefijo) + f" ORDER BY {t['pk']}")
+        items.extend(_a_item(prefijo, f) for f in filas)
+    return items
+
+
+def obtener_item(item_id):
+    """Devuelve el item (dict) o None si el id no es válido / no existe."""
+    resuelto = _resolver_id(item_id)
+    if not resuelto:
+        return None
+    prefijo, numero = resuelto
+    fila = db.consultar(_select(prefijo) + f" WHERE {TABLAS[prefijo]['pk']} = %s",
+                        (numero,), uno=True)
+    return _a_item(prefijo, fila) if fila else None
+
+
+def _no_encontrado():
+    return jsonify({"estado": "error", "mensaje": "Servicio no encontrado"}), 404
+
+
+def _validar_cuerpo(datos):
+    """Devuelve (valores, None) si es válido, o (None, mensaje_de_error)."""
+    if not isinstance(datos, dict):
+        return None, "El cuerpo debe ser un JSON"
+    for campo in CAMPOS_REQUERIDOS:
+        if campo not in datos:
+            return None, f"Falta el campo: {campo}"
+
+    nombre = str(datos['nombre']).strip()
+    descripcion = str(datos['descripcion']).strip()
+    icono = str(datos['icono']).strip()
+    digitos = re.sub(r"\D", "", str(datos['precio']))  # "90.000" -> "90000"
+
+    if not nombre or len(nombre) > 100:
+        return None, "El nombre es obligatorio y admite máximo 100 caracteres"
+    if len(descripcion) > 255:
+        return None, "La descripción admite máximo 255 caracteres"
+    if len(icono) > 10:
+        return None, "El icono admite máximo 10 caracteres"
+    if not digitos:
+        return None, "El precio debe ser un número"
+    try:
+        stock = int(datos['stock'])
+    except (TypeError, ValueError):
+        return None, "Los cupos deben ser un número entero"
+    if stock < 0:
+        return None, "Los cupos no pueden ser negativos"
+
+    return {"nombre": nombre, "descripcion": descripcion, "precio": int(digitos),
+            "icono": icono, "stock": stock}, None
+
+
+# ---------- Errores de base de datos ----------
+@app.errorhandler(db.Error)
+def error_base_de_datos(e):
+    app.logger.error("Error de base de datos: %s", e)
+    if request.path.startswith('/api/'):
+        return jsonify({"estado": "error",
+                        "mensaje": "No se pudo conectar con la base de datos"}), 500
+    return ("No se pudo conectar con la base de datos. "
+            "Revisa tu archivo .env y que MySQL esté encendido."), 503
+
+
+# ---------- Rutas ----------
 @app.route('/')
 def inicio():
-    return render_template('index.html', servicios=SERVICIOS)
+    return render_template('index.html', servicios=listar_items())
 
 
 @app.route('/api/servicios')
 def api_servicios():
-    # Endpoint (GET) 
-    return jsonify({"estado": "exito", "datos": SERVICIOS})
+    # Endpoint (GET)
+    return jsonify({"estado": "exito", "datos": listar_items()})
 
 
 # METODO POST
-@app.route('/api/servicios/<int:servicio_id>/reservar', methods=['POST'])
-def reservar_servicio(servicio_id):
-    # Reserva 1 cupo/unidad del servicio o producto indicado: descuenta su disponibilidad
-    for servicio in SERVICIOS:
-        if servicio['id'] == servicio_id:
-            if servicio['stock'] <= 0:
-                return jsonify({"estado": "error", "mensaje": "Sin cupos disponibles"}), 400
-            servicio['stock'] -= 1
-            return jsonify({"estado": "exito", "datos": servicio})
-    return jsonify({"estado": "error", "mensaje": "Servicio no encontrado"}), 404
+@app.route('/api/servicios/<item_id>/reservar', methods=['POST'])
+def reservar_servicio(item_id):
+    # Reserva 1 cupo/unidad: descuenta su disponibilidad (de forma atómica en la BD)
+    resuelto = _resolver_id(item_id)
+    if not resuelto:
+        return _no_encontrado()
+    prefijo, numero = resuelto
+    t = TABLAS[prefijo]
+
+    afectadas = db.ejecutar(
+        f"UPDATE {t['tabla']} SET {t['stock']} = {t['stock']} - 1 "
+        f"WHERE {t['pk']} = %s AND {t['stock']} > 0",
+        (numero,),
+    )
+    item = obtener_item(item_id)
+    if item is None:
+        return _no_encontrado()
+    if afectadas == 0:
+        return jsonify({"estado": "error", "mensaje": "Sin cupos disponibles"}), 400
+    return jsonify({"estado": "exito", "datos": item})
 
 
 # METODO PUT
-@app.route('/api/servicios/<int:servicio_id>', methods=['PUT'])
-def reemplazar_servicio(servicio_id):
-    datos = request.get_json()
+@app.route('/api/servicios/<item_id>', methods=['PUT'])
+def reemplazar_servicio(item_id):
+    valores, error = _validar_cuerpo(request.get_json(silent=True))
+    if error:
+        return jsonify({"estado": "error", "mensaje": error}), 400
 
-    campos_requeridos = [
-        'nombre',
-        'descripcion',
-        'precio',
-        'icono',
-        'stock'
-    ]
+    if obtener_item(item_id) is None:
+        return _no_encontrado()
 
-    for campo in campos_requeridos:
-        if campo not in datos:
-            return jsonify({
-                "estado": "error",
-                "mensaje": f"Falta el campo: {campo}"
-            }), 400
-
-    for servicio in SERVICIOS:
-        if servicio['id'] == servicio_id:
-            servicio['nombre'] = datos['nombre']
-            servicio['descripcion'] = datos['descripcion']
-            servicio['precio'] = datos['precio']
-            servicio['icono'] = datos['icono']
-            servicio['stock'] = datos['stock']
-
-            return jsonify({
-                "estado": "exito",
-                "mensaje": "Servicio actualizado correctamente",
-                "datos": servicio
-            })
-
+    prefijo, numero = _resolver_id(item_id)
+    t = TABLAS[prefijo]
+    db.ejecutar(
+        f"UPDATE {t['tabla']} SET {t['nombre']} = %s, Descripcion = %s, "
+        f"{t['precio']} = %s, Icono = %s, {t['stock']} = %s WHERE {t['pk']} = %s",
+        (valores['nombre'], valores['descripcion'], valores['precio'],
+         valores['icono'], valores['stock'], numero),
+    )
     return jsonify({
-        "estado": "error",
-        "mensaje": "Servicio no encontrado"
-    }), 404
+        "estado": "exito",
+        "mensaje": "Servicio actualizado correctamente",
+        "datos": obtener_item(item_id),
+    })
 
 
 # METODO DELETE
-@app.route('/api/servicios/<int:servicio_id>', methods=['DELETE'])
-def eliminar_servicio(servicio_id):
-    # Elimina el servicio o producto indicado
-    for servicio in SERVICIOS:
-        if servicio['id'] == servicio_id:
-            SERVICIOS.remove(servicio)
+@app.route('/api/servicios/<item_id>', methods=['DELETE'])
+def eliminar_servicio(item_id):
+    item = obtener_item(item_id)
+    if item is None:
+        return _no_encontrado()
 
-            return jsonify({
-                "estado": "exito",
-                "mensaje": "Servicio eliminado correctamente",
-                "datos": servicio
-            })
+    prefijo, numero = _resolver_id(item_id)
+    t = TABLAS[prefijo]
+    try:
+        db.ejecutar(f"DELETE FROM {t['tabla']} WHERE {t['pk']} = %s", (numero,))
+    except db.IntegrityError:
+        # Error 1451: hay reservas o facturas que dependen de este registro
+        return jsonify({
+            "estado": "error",
+            "mensaje": "No se puede eliminar: tiene reservas o facturas asociadas",
+        }), 409
 
     return jsonify({
-        "estado": "error",
-        "mensaje": "Servicio no encontrado"
-    }), 404
+        "estado": "exito",
+        "mensaje": "Servicio eliminado correctamente",
+        "datos": item,
+    })
 
 
 if __name__ == '__main__':
