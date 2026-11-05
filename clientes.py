@@ -220,13 +220,19 @@ def registro():
     if db.consultar("SELECT 1 FROM CLIENTE WHERE CorreoCliente = %s", (correo,), uno=True):
         return _error("Ya existe una cuenta con ese correo", 409)
 
+    clave_hash = generate_password_hash(clave)
     try:
         with db.transaccion() as cur:
             cur.execute(
                 "INSERT INTO CLIENTE (NombreCliente, ContactoCliente, DireccionCliente, "
                 "CorreoCliente, ClaveHash) VALUES (%s, %s, %s, %s, %s)",
-                (nombre, contacto, direccion, correo, generate_password_hash(clave)))
+                (nombre, contacto, direccion, correo, clave_hash))
             cid = cur.lastrowid
+            # Mismo registro en USUARIOS (con el hash y la contraseña tal cual)
+            cur.execute(
+                "INSERT INTO USUARIOS (ID_Cliente, Nombre, Correo, ClaveHash, Clave, Rol) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (cid, nombre, correo, clave_hash, clave, "Cliente"))
     except db.IntegrityError:
         return _error("Ya existe una cuenta con ese correo", 409)
 
