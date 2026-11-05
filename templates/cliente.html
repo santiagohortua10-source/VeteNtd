@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal de clientes · PawCare</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+    <header class="barra">
+        <a class="marca" href="/">🐾 PawCare</a>
+        <nav aria-label="Principal">
+            <a href="/">Catálogo</a>
+            <a href="/cliente" class="activo">Portal de clientes</a>
+        </nav>
+        {% if cliente %}
+        <div class="barra-usuario">
+            <span>Hola, <strong>{{ cliente.nombre.split(' ')[0] }}</strong></span>
+            <button class="btn btn-suave btn-chico" id="btn-salir">Salir</button>
+        </div>
+        <!-- Notificaciones del cliente (MongoDB) -->
+        <div class="campana-wrap">
+            <button class="campana" id="btn-campana" aria-label="Notificaciones">🔔
+                <span class="badge {% if no_leidas == 0 %}oculto{% endif %}" id="badge">{{ no_leidas }}</span>
+            </button>
+            <div class="panel" id="panel">
+                <div class="panel-header">
+                    <strong>Mis notificaciones</strong>
+                    <button id="btn-leer-todas">Marcar todas como leídas</button>
+                </div>
+                <div id="lista-notif"><div class="panel-vacio">Cargando…</div></div>
+            </div>
+        </div>
+        {% endif %}
+    </header>
+
+    <main class="contenedor">
+{% if not cliente %}
+        <!-- ================= Ingreso / registro ================= -->
+        <section class="acceso">
+            <h1 class="titulo-pagina">Portal de clientes</h1>
+            <p class="subtitulo">Agenda citas con tu veterinario, registra a tus mascotas y recibe avisos de cada servicio.</p>
+
+            <div class="pestanas" role="tablist">
+                <button class="pestana" role="tab" aria-selected="true" data-form="login">Ingresar</button>
+                <button class="pestana" role="tab" aria-selected="false" data-form="registro">Crear cuenta</button>
+            </div>
+
+            <form class="caja" id="form-login">
+                <label class="campo" style="margin-top:0">Correo
+                    <input type="email" name="correo" required autocomplete="email">
+                </label>
+                <label class="campo">Contraseña
+                    <input type="password" name="clave" required autocomplete="current-password">
+                </label>
+                <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Ingresar</button>
+            </form>
+
+            <form class="caja" id="form-registro" hidden>
+                <label class="campo" style="margin-top:0">Nombre completo
+                    <input type="text" name="nombre" required maxlength="100" autocomplete="name">
+                </label>
+                <div class="grid-2">
+                    <label class="campo">Teléfono
+                        <input type="tel" name="contacto" required maxlength="20" autocomplete="tel">
+                    </label>
+                    <label class="campo">Dirección
+                        <input type="text" name="direccion" required maxlength="100" autocomplete="street-address">
+                    </label>
+                </div>
+                <label class="campo">Correo
+                    <input type="email" name="correo" required maxlength="100" autocomplete="email">
+                </label>
+                <label class="campo">Contraseña
+                    <input type="password" name="clave" required minlength="8" autocomplete="new-password">
+                    <span class="ayuda">Mínimo 8 caracteres.</span>
+                </label>
+                <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Crear mi cuenta</button>
+            </form>
+        </section>
+
+        <script src="{{ url_for('static', filename='comun.js') }}"></script>
+        <script>
+            // Cambiar entre "Ingresar" y "Crear cuenta"
+            document.querySelectorAll('.pestana').forEach(function (tab) {
+                tab.addEventListener('click', function () {
+                    document.querySelectorAll('.pestana').forEach(t => t.setAttribute('aria-selected', t === tab));
+                    document.getElementById('form-login').hidden = tab.dataset.form !== 'login';
+                    document.getElementById('form-registro').hidden = tab.dataset.form !== 'registro';
+                });
+            });
+
+            function enviar(formId, url) {
+                document.getElementById(formId).addEventListener('submit', async function (e) {
+                    e.preventDefault();
+                    const boton = e.target.querySelector('button[type="submit"]');
+                    boton.disabled = true;
+                    const r = await api(url, 'POST', Object.fromEntries(new FormData(e.target)));
+                    if (r.ok) { location.reload(); return; }
+                    aviso(r.data.mensaje, 'error');
+                    boton.disabled = false;
+                });
+            }
+            enviar('form-login', '/api/cliente/login');
+            enviar('form-registro', '/api/cliente/registro');
+        </script>
+
+{% else %}
+        <!-- ================= Portal ================= -->
+        <h1 class="titulo-pagina">Hola, {{ cliente.nombre.split(' ')[0] }} 👋</h1>
+        <p class="subtitulo">Agenda una cita, revisa tus próximas visitas o administra a tus mascotas.</p>
+
+        <div class="pestanas" role="tablist">
+            <button class="pestana" role="tab" aria-selected="true" data-vista="agendar">📅 Agendar cita</button>
+            <button class="pestana" role="tab" aria-selected="false" data-vista="citas">Mis citas <span class="cuenta" id="cuenta-citas" hidden></span></button>
+            <button class="pestana" role="tab" aria-selected="false" data-vista="mascotas">Mis mascotas</button>
+        </div>
+
+        <!-- ---- Agendar ---- -->
+        <section id="vista-agendar">
+            <div class="agenda">
+                <div class="pasos">
+                    <div class="paso" id="paso-mascota">
+                        <h2><span class="num">1</span> ¿Para quién es la cita?</h2>
+                        <div class="opciones" id="op-mascotas"></div>
+                    </div>
+                    <div class="paso" id="paso-servicio">
+                        <h2><span class="num">2</span> Elige el servicio</h2>
+                        <div class="opciones" id="op-servicios"></div>
+                    </div>
+                    <div class="paso" id="paso-vet">
+                        <h2><span class="num">3</span> Elige al veterinario</h2>
+                        <div class="opciones" id="op-vets"></div>
+                    </div>
+                    <div class="paso" id="paso-fecha">
+                        <h2><span class="num">4</span> Elige el día y la hora</h2>
+                        <label class="campo" style="margin-top:0; max-width: 260px">Día de la cita
+                            <input type="date" id="fecha" min="{{ fecha_min }}" max="{{ fecha_max }}">
+                        </label>
+                        <div id="zona-horas"></div>
+                    </div>
+                </div>
+
+                <aside class="caja resumen" aria-label="Resumen de tu cita">
+                    <h2>Resumen de tu cita</h2>
+                    <dl>
+                        <div><dt>Mascota</dt><dd id="res-mascota" class="pendiente">Sin elegir</dd></div>
+                        <div><dt>Servicio</dt><dd id="res-servicio" class="pendiente">Sin elegir</dd></div>
+                        <div><dt>Veterinario</dt><dd id="res-vet" class="pendiente">Sin elegir</dd></div>
+                        <div class="cuando" id="res-cuando" hidden><dt>Día y hora</dt><dd id="res-cuando-texto"></dd></div>
+                    </dl>
+                    <div class="total"><span>Valor del servicio</span><strong id="res-total">—</strong></div>
+                    <button class="btn btn-primario btn-bloque" id="btn-confirmar" disabled>Confirmar cita</button>
+                </aside>
+            </div>
+        </section>
+
+        <!-- ---- Mis citas ---- -->
+        <section id="vista-citas" hidden>
+            <div id="lista-citas"></div>
+        </section>
+
+        <!-- ---- Mis mascotas ---- -->
+        <section id="vista-mascotas" hidden>
+            <div class="barra-seccion">
+                <h2 style="font-size:1.15rem">Tus mascotas</h2>
+                <button class="btn btn-primario" id="btn-nueva-mascota">➕ Agregar mascota</button>
+            </div>
+            <div class="mascotas" id="lista-mascotas"></div>
+        </section>
+
+        <!-- Ventana: nueva mascota -->
+        <div class="overlay" id="overlay-mascota">
+            <form class="modal" id="form-mascota" role="dialog" aria-modal="true" aria-labelledby="titulo-mascota">
+                <h2 id="titulo-mascota">Agregar mascota</h2>
+                <label class="campo">Nombre
+                    <input type="text" name="nombre" required maxlength="50">
+                </label>
+                <div class="grid-2">
+                    <label class="campo">Especie
+                        <select name="especie" required>
+                            <option>Perro</option><option>Gato</option><option>Ave</option>
+                            <option>Conejo</option><option>Otro</option>
+                        </select>
+                    </label>
+                    <label class="campo">Raza
+                        <input type="text" name="raza" maxlength="50" placeholder="Mestizo">
+                    </label>
+                </div>
+                <div class="grid-2">
+                    <label class="campo">Fecha de nacimiento
+                        <input type="date" name="nacimiento" required max="{{ fecha_min }}">
+                    </label>
+                    <label class="campo">Peso (kg)
+                        <input type="number" name="peso" required min="0.1" max="999" step="0.1">
+                    </label>
+                </div>
+                <div class="grid-2">
+                    <label class="campo">Tamaño
+                        <select name="tamano" required>
+                            <option>Pequeño</option><option selected>Mediano</option><option>Grande</option>
+                        </select>
+                    </label>
+                    <label class="campo">Género
+                        <select name="genero" required><option>Macho</option><option>Hembra</option></select>
+                    </label>
+                </div>
+                <div class="modal-botones">
+                    <button type="button" class="btn btn-suave" id="btn-cancelar-mascota">Cancelar</button>
+                    <button type="submit" class="btn btn-primario">Guardar mascota</button>
+                </div>
+            </form>
+        </div>
+
+        <script src="{{ url_for('static', filename='comun.js') }}"></script>
+        <script>
+            const refrescarNotificaciones = iniciarNotificaciones('/api/cliente/notificaciones');
+            const EMOJI = { Perro: '🐶', Gato: '🐱', Ave: '🐦', Conejo: '🐰', Otro: '🐾' };
+            const VISTAS = ['agendar', 'citas', 'mascotas'];
+            const estado = {
+                mascotas: [], servicios: [], vets: [], citas: [],
+                sel: { mascota: null, servicio: null, vet: null, fecha: '', hora: null },
+                horas: null, diaTexto: ''          // horas: null = aún no se consulta
+            };
+            let consultaHoras = 0;                   // descarta respuestas viejas si el cliente cambia de opinión
+            const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+            const $ = id => document.getElementById(id);
+
+            // Si la sesión caducó, se recarga para mostrar el ingreso
+            function sesionCaducada(r) { if (r.status === 401) { location.reload(); return true; } return false; }
+
+            // ---------- Pestañas ----------
+            function mostrarVista(nombre) {
+                VISTAS.forEach(v => { $('vista-' + v).hidden = v !== nombre; });
+                document.querySelectorAll('.pestana').forEach(t => t.setAttribute('aria-selected', t.dataset.vista === nombre));
+                history.replaceState(null, '', '#' + nombre);
+            }
+            document.querySelectorAll('.pestana').forEach(t => t.addEventListener('click', () => mostrarVista(t.dataset.vista)));
+
+            // ---------- Paso 1: mascota ----------
+            function opcion({ titulo, sub, precio, activa, alClic }) {
+                return el('button', { type: 'button', class: 'opcion', 'aria-pressed': String(activa), onclick: alClic },
+                    el('span', { class: 'o-tit' }, titulo),
+                    sub ? el('span', { class: 'o-sub' }, sub) : null,
+                    precio ? el('span', { class: 'o-precio' }, precio) : null);
+            }
+
+            function pintarMascotasSelector() {
+                const caja = $('op-mascotas');
+                caja.replaceChildren();
+                if (estado.mascotas.length === 0) {
+                    caja.style.display = 'block';
+                    caja.appendChild(el('div', { class: 'vacio' },
+                        'Aún no registras mascotas. Agrega una para poder agendar su cita.',
+                        el('div', null, el('button', { class: 'btn btn-primario', onclick: () => { mostrarVista('mascotas'); abrirModalMascota(); } }, 'Registrar mi mascota'))));
+                    return;
+                }
+                caja.style.display = '';
+                estado.mascotas.forEach(m => caja.appendChild(opcion({
+                    titulo: `${EMOJI[m.especie] || '🐾'} ${m.nombre}`,
+                    sub: `${m.raza} · ${m.edad}`,
+                    activa: estado.sel.mascota === m.id,
+                    alClic: () => { estado.sel.mascota = m.id; estado.sel.hora = null; pintarTodo(); cargarHoras(); }
+                })));
+            }
+
+            // ---------- Paso 2: servicio ----------
+            function pintarServicios() {
+                const caja = $('op-servicios');
+                caja.replaceChildren();
+                estado.servicios.forEach(s => caja.appendChild(opcion({
+                    titulo: `${s.icono} ${s.nombre}`,
+                    sub: `Dura ${s.duracion} min`,
+                    precio: `$${s.precio}`,
+                    activa: estado.sel.servicio === s.id,
+                    alClic: () => { estado.sel.servicio = s.id; estado.sel.hora = null; pintarTodo(); cargarHoras(); }
+                })));
+            }
+
+            // ---------- Paso 3: veterinario ----------
+            function pintarVets() {
+                const caja = $('op-vets');
+                caja.replaceChildren();
+                if (estado.vets.length === 0) {
+                    caja.style.display = 'block';
+                    caja.appendChild(el('div', { class: 'vacio' }, 'Todavía no hay veterinarios registrados.'));
+                    return;
+                }
+                caja.style.display = '';
+                estado.vets.forEach(v => caja.appendChild(opcion({
+                    titulo: `🩺 ${v.nombre}`,
+                    sub: v.dias.length ? 'Atiende: ' + v.dias.map(d => d.slice(0, 3)).join(', ') : 'Sin horario asignado',
+                    activa: estado.sel.vet === v.id,
+                    alClic: () => { estado.sel.vet = v.id; estado.sel.hora = null; pintarTodo(); cargarHoras(); }
+                })));
+            }
+
+            // ---------- Paso 4: día y hora ----------
+            async function cargarHoras() {
+                const s = estado.sel;
+                estado.horas = null;
+                if (!(s.servicio && s.vet && s.fecha)) { pintarHoras(); return; }
+                const turno = ++consultaHoras;
+                pintarHoras(true);
+                const q = new URLSearchParams({ servicio: s.servicio, veterinario: s.vet, fecha: s.fecha });
+                if (s.mascota) q.set('mascota', s.mascota);
+                const r = await api('/api/cliente/disponibilidad?' + q);
+                if (turno !== consultaHoras) return;            // llegó tarde: ya hay otra consulta en curso
+                if (sesionCaducada(r)) return;
+                if (!r.ok) { aviso(r.data.mensaje, 'error'); estado.horas = []; estado.diaTexto = ''; }
+                else { estado.horas = r.data.datos; estado.diaTexto = r.data.dia_texto; }
+                if (s.hora && !(estado.horas || []).some(h => h.valor === s.hora.valor)) s.hora = null;
+                pintarHoras();
+                pintarResumen();
+            }
+
+            function pintarHoras(cargando) {
+                const zona = $('zona-horas');
+                zona.replaceChildren();
+                const s = estado.sel;
+                if (cargando) { zona.appendChild(el('p', { class: 'ayuda' }, 'Buscando horas libres…')); return; }
+                if (!(s.servicio && s.vet && s.fecha)) {
+                    const faltan = [!s.servicio && 'el servicio', !s.vet && 'el veterinario', !s.fecha && 'el día'].filter(Boolean);
+                    zona.appendChild(el('p', { class: 'ayuda' }, 'Elige ' + faltan.join(', ').replace(/, ([^,]*)$/, ' y $1') + ' para ver las horas libres.'));
+                    return;
+                }
+                if (estado.horas === null) return;
+                if (estado.horas.length === 0) {
+                    const v = estado.vets.find(x => x.id === s.vet);
+                    zona.appendChild(el('div', { class: 'vacio', style: 'margin-top:.9rem' },
+                        `No hay horas libres el ${estado.diaTexto || 'día elegido'} con ${v ? v.nombre : 'este veterinario'}. `,
+                        v && v.dias.length ? `Atiende: ${v.dias.join(', ')}. Prueba otro día u otro veterinario.` : 'Prueba otro día u otro veterinario.'));
+                    return;
+                }
+                zona.appendChild(el('p', { class: 'ayuda', style: 'margin-top:.9rem' }, `Horas libres el ${estado.diaTexto}:`));
+                const rejilla = el('div', { class: 'horas', role: 'group', 'aria-label': 'Horas disponibles' });
+                estado.horas.forEach(h => rejilla.appendChild(el('button', {
+                    type: 'button', class: 'hora', 'aria-pressed': String(!!s.hora && s.hora.valor === h.valor),
+                    onclick: () => { s.hora = h; pintarHoras(); pintarResumen(); }
+                }, h.texto)));
+                zona.appendChild(rejilla);
+            }
+
+            $('fecha').addEventListener('change', function () {
+                estado.sel.fecha = this.value;
+                estado.sel.hora = null;
+                cargarHoras();
+                pintarResumen();
+            });
+
+            // ---------- Resumen y confirmación ----------
+            function fijar(id, texto, vacio) {
+                const nodo = $(id);
+                nodo.textContent = texto || vacio;
+                nodo.classList.toggle('pendiente', !texto);
+            }
+
+            function pintarResumen() {
+                const s = estado.sel;
+                const m = estado.mascotas.find(x => x.id === s.mascota);
+                const sv = estado.servicios.find(x => x.id === s.servicio);
+                const v = estado.vets.find(x => x.id === s.vet);
+                fijar('res-mascota', m && m.nombre, 'Sin elegir');
+                fijar('res-servicio', sv && sv.nombre, 'Sin elegir');
+                fijar('res-vet', v && v.nombre, 'Sin elegir');
+                $('res-total').textContent = sv ? '$' + sv.precio : '—';
+
+                const listo = !!(s.fecha && s.hora && estado.diaTexto);
+                $('res-cuando').hidden = !listo;
+                if (listo) $('res-cuando-texto').textContent = `${cap(estado.diaTexto)} · ${s.hora.texto}`;
+                $('btn-confirmar').disabled = !(m && sv && v && listo);
+
+                // marca de paso hecho
+                $('paso-mascota').classList.toggle('hecho', !!m);
+                $('paso-servicio').classList.toggle('hecho', !!sv);
+                $('paso-vet').classList.toggle('hecho', !!v);
+                $('paso-fecha').classList.toggle('hecho', listo);
+            }
+
+            $('btn-confirmar').addEventListener('click', async function () {
+                const s = estado.sel;
+                this.disabled = true;
+                const r = await api('/api/cliente/citas', 'POST', {
+                    mascota: s.mascota, servicio: s.servicio, veterinario: s.vet, fecha: s.fecha, hora: s.hora.valor
+                });
+                if (!r.ok) {
+                    if (sesionCaducada(r)) return;
+                    aviso(r.data.mensaje, 'error');
+                    if (r.status === 409) await cargarHoras();     // alguien tomó esa hora: se actualiza la lista
+                    pintarResumen();
+                    return;
+                }
+                const c = r.data.datos;
+                aviso(`¡Listo! ${c.mascota} tiene cita el ${c.dia_texto} a las ${c.hora_texto}`);
+                estado.sel = { mascota: s.mascota, servicio: null, vet: null, fecha: '', hora: null };
+                estado.horas = null; estado.diaTexto = '';
+                $('fecha').value = '';
+                await cargarCitas();
+                pintarTodo();
+                refrescarNotificaciones();
+                mostrarVista('citas');
+            });
+
+            // ---------- Mis citas ----------
+            async function cargarCitas() {
+                const r = await api('/api/cliente/citas');
+                if (sesionCaducada(r)) return;
+                if (r.ok) estado.citas = r.data.datos;
+                pintarCitas();
+            }
+
+            function tarjetaCita(c, puedeCancelar) {
+                const cancelada = c.estado === 'Cancelada';
+                const pasada = !cancelada && !c.futura;
+                return el('article', { class: 'cita' + (cancelada ? ' cancelada' : '') + (pasada ? ' pasada' : '') },
+                    el('div', { class: 'ticket' }, el('div', { class: 'dia' }, String(c.dia_num)), el('div', { class: 'mes' }, c.mes_corto)),
+                    el('div', null,
+                        el('h3', null, `${c.icono} ${c.servicio}`,
+                            el('span', { class: 'estado ' + c.estado.toLowerCase() }, cancelada ? 'Cancelada' : (pasada ? 'Realizada' : 'Agendada'))),
+                        el('p', { class: 'detalle' }, el('span', { class: 'hora-cita' }, `${cap(c.dia_texto)} · ${c.hora_texto}`)),
+                        el('p', { class: 'detalle' }, 'Mascota: ', el('strong', null, c.mascota), ' · Veterinario: ', el('strong', null, c.veterinario)),
+                        el('p', { class: 'detalle' }, `${c.duracion} min · $${c.precio}`)),
+                    puedeCancelar ? el('button', { class: 'btn btn-suave btn-chico', onclick: () => cancelarCita(c) }, 'Cancelar cita') : null);
+            }
+
+            function pintarCitas() {
+                const proximas = estado.citas.filter(c => c.estado === 'Agendada' && c.futura);
+                const historial = estado.citas.filter(c => !proximas.includes(c)).reverse();
+                const cont = $('lista-citas');
+                cont.replaceChildren();
+
+                cont.appendChild(el('h2', { class: 'titulo-seccion' }, 'Próximas citas'));
+                if (proximas.length === 0) {
+                    cont.appendChild(el('div', { class: 'vacio' }, 'No tienes citas próximas.',
+                        el('div', null, el('button', { class: 'btn btn-primario', onclick: () => mostrarVista('agendar') }, 'Agendar una cita'))));
+                } else {
+                    cont.appendChild(el('div', { class: 'lista-citas' }, ...proximas.map(c => tarjetaCita(c, true))));
+                }
+                if (historial.length) {
+                    cont.appendChild(el('h2', { class: 'titulo-seccion' }, 'Historial'));
+                    cont.appendChild(el('div', { class: 'lista-citas' }, ...historial.map(c => tarjetaCita(c, false))));
+                }
+                const cuenta = $('cuenta-citas');
+                cuenta.textContent = proximas.length;
+                cuenta.hidden = proximas.length === 0;
+            }
+
+            async function cancelarCita(c) {
+                if (!confirm(`¿Cancelar la cita de ${c.mascota} del ${c.dia_texto} a las ${c.hora_texto}?`)) return;
+                const r = await api(`/api/cliente/citas/${c.id}/cancelar`, 'PATCH');
+                if (sesionCaducada(r)) return;
+                if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+                aviso('Cita cancelada.');
+                await cargarCitas();
+                cargarHoras();                       // la hora liberada vuelve a aparecer en la agenda
+                refrescarNotificaciones();
+            }
+
+            // ---------- Mis mascotas ----------
+            function pintarMascotas() {
+                const cont = $('lista-mascotas');
+                cont.replaceChildren();
+                if (estado.mascotas.length === 0) {
+                    cont.style.display = 'block';
+                    cont.appendChild(el('div', { class: 'vacio' }, 'Aún no registras mascotas.'));
+                    return;
+                }
+                cont.style.display = '';
+                estado.mascotas.forEach(m => cont.appendChild(el('article', { class: 'mascota' },
+                    el('div', { class: 'emoji' }, EMOJI[m.especie] || '🐾'),
+                    el('h3', null, m.nombre),
+                    el('p', { class: 'detalle' }, `${m.especie} · ${m.raza}`),
+                    el('p', { class: 'detalle' }, `${m.edad} · ${m.peso} kg`),
+                    el('p', { class: 'detalle' }, `${m.tamano} · ${m.genero}`),
+                    el('button', { class: 'btn btn-suave btn-chico', onclick: () => eliminarMascota(m) }, '🗑️ Eliminar'))));
+            }
+
+            async function eliminarMascota(m) {
+                if (!confirm(`¿Eliminar a ${m.nombre}?`)) return;
+                const r = await api(`/api/cliente/mascotas/${m.id}`, 'DELETE');
+                if (sesionCaducada(r)) return;
+                if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+                estado.mascotas = estado.mascotas.filter(x => x.id !== m.id);
+                if (estado.sel.mascota === m.id) estado.sel.mascota = null;
+                aviso(`${m.nombre} se eliminó de tu cuenta.`);
+                pintarTodo();
+            }
+
+            const overlayMascota = $('overlay-mascota');
+            function abrirModalMascota() { $('form-mascota').reset(); overlayMascota.classList.add('activo'); $('form-mascota').nombre.focus(); }
+            function cerrarModalMascota() { overlayMascota.classList.remove('activo'); }
+            $('btn-nueva-mascota').addEventListener('click', abrirModalMascota);
+            $('btn-cancelar-mascota').addEventListener('click', cerrarModalMascota);
+            overlayMascota.addEventListener('click', e => { if (e.target === overlayMascota) cerrarModalMascota(); });
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModalMascota(); });
+
+            $('form-mascota').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const boton = e.target.querySelector('button[type="submit"]');
+                boton.disabled = true;
+                const r = await api('/api/cliente/mascotas', 'POST', Object.fromEntries(new FormData(e.target)));
+                boton.disabled = false;
+                if (sesionCaducada(r)) return;
+                if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+                estado.mascotas.push(r.data.datos);
+                estado.mascotas.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+                if (!estado.sel.mascota) estado.sel.mascota = r.data.datos.id;
+                cerrarModalMascota();
+                aviso(`${r.data.datos.nombre} quedó registrada.`);
+                pintarTodo();
+            });
+
+            // ---------- Arranque ----------
+            function pintarTodo() {
+                pintarMascotasSelector(); pintarServicios(); pintarVets(); pintarHoras(); pintarResumen(); pintarMascotas();
+            }
+
+            $('btn-salir').addEventListener('click', async function () {
+                await api('/api/cliente/logout', 'POST');
+                location.href = '/cliente';
+            });
+
+            (async function iniciar() {
+                const [m, s, v, c] = await Promise.all([
+                    api('/api/cliente/mascotas'), api('/api/cliente/servicios'),
+                    api('/api/cliente/veterinarios'), api('/api/cliente/citas')
+                ]);
+                if ([m, s, v, c].some(sesionCaducada)) return;
+                const fallo = [m, s, v, c].find(r => !r.ok);
+                if (fallo) aviso(fallo.data.mensaje, 'error');
+                estado.mascotas = m.ok ? m.data.datos : [];
+                estado.servicios = s.ok ? s.data.datos : [];
+                estado.vets = v.ok ? v.data.datos : [];
+                estado.citas = c.ok ? c.data.datos : [];
+                if (estado.mascotas.length === 1) estado.sel.mascota = estado.mascotas[0].id;   // atajo: una sola mascota
+                pintarTodo();
+                pintarCitas();
+                const inicial = location.hash.slice(1);
+                mostrarVista(VISTAS.includes(inicial) ? inicial : 'agendar');
+            })();
+        </script>
+{% endif %}
+    </main>
+</body>
+</html>

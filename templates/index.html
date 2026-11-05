@@ -4,321 +4,201 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Veterinaria PawCare</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #0f1f1c; color: #f3f4f6; margin: 0; padding: 2rem; }
-        h1 { text-align: center; }
-        .subtitulo { text-align: center; color: #9ca3af; margin-top: -.5rem; margin-bottom: 1.5rem; }
-        .servicios { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 2rem auto; max-width: 1000px; }
-        .card { background: #16302b; border-radius: 12px; padding: 1rem; text-align: center; display: flex; flex-direction: column; }
-        .card .icono { font-size: 2rem; }
-        .card .precio { color: #34d399; font-weight: bold; margin-top: .5rem; }
-        .card .stock { margin-top: .5rem; font-size: .9rem; color: #9ca3af; }
-        .card .stock strong { color: #f3f4f6; }
-        .card .acciones { display: flex; flex-direction: column; gap: .5rem; margin-top: .75rem; }
-        .card button { padding: .6rem; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background .2s; }
-        .card .btn-comprar { background: #34d399; color: #0f1f1c; }
-        .card .btn-comprar:hover:not(:disabled) { background: #10b981; }
-        .card .btn-comprar:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; }
-        .card .btn-editar { background: #3b82f6; color: #ffffff; }
-        .card .btn-editar:hover { background: #2563eb; }
-        .card .btn-eliminar { background: #ef4444; color: #ffffff; }
-        .card .btn-eliminar:hover { background: #dc2626; }
-        .card.agotado { opacity: .6; }
-
-        /* Campana de notificaciones (MongoDB) */
-        .campana-wrap { position: fixed; top: 1rem; right: 1rem; z-index: 20; }
-        .campana { position: relative; background: #16302b; border: 1px solid #274740; color: #f3f4f6; border-radius: 50%; width: 46px; height: 46px; font-size: 1.3rem; cursor: pointer; }
-        .campana:hover { background: #1d3d37; }
-        .badge { position: absolute; top: -4px; right: -4px; background: #ef4444; color: #fff; border-radius: 999px; font-size: .7rem; font-weight: bold; min-width: 20px; padding: 2px 5px; box-sizing: border-box; }
-        .badge.oculto { display: none; }
-        .panel { display: none; position: absolute; right: 0; top: 54px; width: 340px; max-width: 90vw; max-height: 70vh; overflow-y: auto; background: #16302b; border: 1px solid #274740; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
-        .panel.activo { display: block; }
-        .panel-header { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1rem; border-bottom: 1px solid #274740; position: sticky; top: 0; background: #16302b; }
-        .panel-header button { background: none; border: none; color: #34d399; cursor: pointer; font-size: .8rem; }
-        .notif { padding: .7rem 1rem; border-bottom: 1px solid #1d3d37; cursor: pointer; border-left: 3px solid transparent; }
-        .notif:hover { background: #1d3d37; }
-        .notif.no-leida { background: #1a3832; border-left-color: #34d399; }
-        .notif.alta.no-leida { border-left-color: #ef4444; }
-        .notif .n-titulo { font-weight: bold; font-size: .9rem; }
-        .notif .n-msg { font-size: .85rem; color: #d1d5db; margin-top: .15rem; }
-        .notif .n-fecha { font-size: .72rem; color: #9ca3af; margin-top: .25rem; }
-        .panel-vacio { padding: 1.25rem; text-align: center; color: #9ca3af; font-size: .9rem; }
-
-        /* Modal de edición */
-        .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); align-items: center; justify-content: center; z-index: 10; }
-        .overlay.activo { display: flex; }
-        .modal { background: #16302b; border-radius: 12px; padding: 1.5rem; width: 90%; max-width: 380px; }
-        .modal h2 { margin-top: 0; }
-        .modal label { display: block; margin-top: .75rem; font-size: .85rem; color: #9ca3af; }
-        .modal input { width: 100%; box-sizing: border-box; padding: .5rem; margin-top: .25rem; border-radius: 6px; border: 1px solid #274740; background: #0f1f1c; color: #f3f4f6; }
-        .modal .modal-botones { display: flex; gap: .5rem; margin-top: 1.25rem; }
-        .modal .modal-botones button { flex: 1; }
-        .modal .btn-guardar { background: #34d399; color: #0f1f1c; }
-        .modal .btn-guardar:hover { background: #10b981; }
-        .modal .btn-cancelar { background: #4b5563; color: #f3f4f6; }
-        .modal .btn-cancelar:hover { background: #374151; }
-    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
 </head>
 <body>
-    <!-- Campana de notificaciones -->
-    <div class="campana-wrap">
-        <button class="campana" id="btn-campana" aria-label="Notificaciones">🔔
-            <span class="badge {% if no_leidas == 0 %}oculto{% endif %}" id="badge">{{ no_leidas }}</span>
-        </button>
-        <div class="panel" id="panel">
-            <div class="panel-header">
-                <strong>Notificaciones</strong>
-                <button id="btn-leer-todas">Marcar todas como leídas</button>
-            </div>
-            <div id="lista-notif"><div class="panel-vacio">Cargando…</div></div>
-        </div>
-    </div>
-
-    <h1>🐾 Veterinaria PawCare</h1>
-    <p class="subtitulo">Servicios y productos para el cuidado de tu mascota</p>
-    <div class="servicios">
-        {% for servicio in servicios %}
-        <div class="card" data-id="{{ servicio.id }}">
-            <div class="icono">{{ servicio.icono }}</div>
-            <h3 class="nombre">{{ servicio.nombre }}</h3>
-            <p class="descripcion">{{ servicio.descripcion }}</p>
-            <div class="precio">${{ servicio.precio }}</div>
-            <div class="stock">Cupos disponibles: <strong class="stock-valor">{{ servicio.stock }}</strong></div>
-            <div class="acciones">
-                <button class="btn-comprar" {% if servicio.stock <= 0 %}disabled{% endif %}>
-                    {% if servicio.stock <= 0 %}Sin cupos{% else %}Reservar{% endif %}
-                </button>
-                <button class="btn-editar">✏️ Editar</button>
-                <button class="btn-eliminar">🗑️ Eliminar</button>
+    <header class="barra">
+        <a class="marca" href="/">🐾 PawCare</a>
+        <nav aria-label="Principal">
+            <a href="/" class="activo">Catálogo</a>
+            <a href="/cliente">Portal de clientes</a>
+        </nav>
+        <!-- Notificaciones del equipo (MongoDB) -->
+        <div class="campana-wrap">
+            <button class="campana" id="btn-campana" aria-label="Notificaciones">🔔
+                <span class="badge {% if no_leidas == 0 %}oculto{% endif %}" id="badge">{{ no_leidas }}</span>
+            </button>
+            <div class="panel" id="panel">
+                <div class="panel-header">
+                    <strong>Notificaciones</strong>
+                    <button id="btn-leer-todas">Marcar todas como leídas</button>
+                </div>
+                <div id="lista-notif"><div class="panel-vacio">Cargando…</div></div>
             </div>
         </div>
-        {% endfor %}
-    </div>
+    </header>
 
-    <!-- Modal de edición -->
+    <main class="contenedor">
+        <h1 class="titulo-pagina">Servicios y productos para tu mascota</h1>
+        <p class="subtitulo">¿Quieres una cita? Entra al <a href="/cliente" style="color: var(--verde);">portal de clientes</a> y agéndala con el veterinario que prefieras.</p>
+
+        <div class="filtros" role="group" aria-label="Filtrar catálogo">
+            <button class="filtro" data-filtro="todos" aria-pressed="true">Todo</button>
+            <button class="filtro" data-filtro="S" aria-pressed="false">Servicios</button>
+            <button class="filtro" data-filtro="P" aria-pressed="false">Productos</button>
+        </div>
+
+        <div class="catalogo">
+            {% for servicio in servicios %}
+            {% set es_servicio = servicio.id.startswith('S') %}
+            <article class="card {% if not es_servicio and servicio.stock <= 0 %}agotado{% endif %}"
+                     data-id="{{ servicio.id }}" data-tipo="{{ servicio.id[0] }}" data-stock="{{ servicio.stock }}">
+                <span class="etiqueta">{{ 'Servicio' if es_servicio else 'Producto' }}</span>
+                <div class="icono">{{ servicio.icono }}</div>
+                <h3 class="nombre">{{ servicio.nombre }}</h3>
+                <p class="descripcion">{{ servicio.descripcion }}</p>
+                <div class="precio">${{ servicio.precio }}</div>
+                {% if not es_servicio %}
+                <div class="stock">Disponibles: <strong class="stock-valor">{{ servicio.stock }}</strong></div>
+                {% endif %}
+
+                <div class="acciones">
+                    {% if es_servicio %}
+                    <a class="btn btn-primario" href="/cliente#agendar">📅 Agendar cita</a>
+                    {% else %}
+                    <button class="btn btn-primario btn-reservar" {% if servicio.stock <= 0 %}disabled{% endif %}>
+                        {% if servicio.stock <= 0 %}Agotado{% else %}Reservar{% endif %}
+                    </button>
+                    {% endif %}
+                    <div class="admin">
+                        <button class="btn btn-info btn-chico btn-editar">✏️ Editar</button>
+                        <button class="btn btn-peligro btn-chico btn-eliminar">🗑️ Eliminar</button>
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </main>
+
+    <!-- Ventana de edición -->
     <div class="overlay" id="overlay">
-        <div class="modal">
-            <h2>Editar servicio</h2>
-            <label>Nombre
-                <input type="text" id="edit-nombre">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+            <h2 id="modal-titulo">Editar</h2>
+            <label class="campo">Nombre
+                <input type="text" id="edit-nombre" maxlength="100">
             </label>
-            <label>Descripción
-                <input type="text" id="edit-descripcion">
+            <label class="campo">Descripción
+                <input type="text" id="edit-descripcion" maxlength="255">
             </label>
-            <label>Precio
-                <input type="text" id="edit-precio">
-            </label>
-            <label>Icono (emoji)
-                <input type="text" id="edit-icono">
-            </label>
-            <label>Cupos disponibles
+            <div class="grid-2">
+                <label class="campo">Precio
+                    <input type="text" id="edit-precio" inputmode="numeric">
+                </label>
+                <label class="campo">Icono (emoji)
+                    <input type="text" id="edit-icono" maxlength="10">
+                </label>
+            </div>
+            <label class="campo">Cupos / stock
                 <input type="number" id="edit-stock" min="0">
             </label>
             <div class="modal-botones">
-                <button class="btn-cancelar" id="btn-cancelar">Cancelar</button>
-                <button class="btn-guardar" id="btn-guardar">Guardar</button>
+                <button class="btn btn-suave" id="btn-cancelar">Cancelar</button>
+                <button class="btn btn-primario" id="btn-guardar">Guardar cambios</button>
             </div>
         </div>
     </div>
 
+    <script src="{{ url_for('static', filename='comun.js') }}"></script>
     <script>
         const overlay = document.getElementById('overlay');
-        let cardEnEdicion = null; // guarda referencia a la card que se está editando
+        const refrescarNotificaciones = iniciarNotificaciones('/api/notificaciones');
+        let cardEnEdicion = null;
 
-        // --- Reservar ---
-        document.querySelectorAll('.btn-comprar').forEach(function (boton) {
-            boton.addEventListener('click', function () {
-                const card = boton.closest('.card');
-                const id = card.dataset.id;
-                reservar(id, boton, card);
+        // --- Filtro Todo / Servicios / Productos ---
+        document.querySelectorAll('.filtro').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('.filtro').forEach(b => b.setAttribute('aria-pressed', b === btn));
+                document.querySelectorAll('.card').forEach(function (card) {
+                    card.hidden = btn.dataset.filtro !== 'todos' && card.dataset.tipo !== btn.dataset.filtro;
+                });
             });
         });
 
-        async function reservar(id, boton, card) {
-            boton.disabled = true; // evita doble clic mientras responde el servidor
+        // --- Reservar un producto (descuenta stock) ---
+        document.querySelectorAll('.btn-reservar').forEach(function (boton) {
+            boton.addEventListener('click', async function () {
+                const card = boton.closest('.card');
+                boton.disabled = true;     // evita doble clic mientras responde el servidor
+                const r = await api(`/api/servicios/${card.dataset.id}/reservar`, 'POST');
+                if (!r.ok) { aviso(r.data.mensaje, 'error'); boton.disabled = false; return; }
 
-            try {
-                const res = await fetch(`/api/servicios/${id}/reservar`, { method: 'POST' });
-                const data = await res.json();
+                const stock = r.data.datos.stock;
+                card.dataset.stock = stock;
+                card.querySelector('.stock-valor').textContent = stock;
+                aviso(`Reservaste «${r.data.datos.nombre}».`);
+                if (stock <= 0) { boton.textContent = 'Agotado'; card.classList.add('agotado'); }
+                else boton.disabled = false;
+                refrescarNotificaciones();
+            });
+        });
 
-                if (data.estado === 'exito') {
-                    refrescarNotificaciones();
-                    const nuevoStock = data.datos.stock;
-                    card.querySelector('.stock-valor').textContent = nuevoStock;
-
-                    if (nuevoStock <= 0) {
-                        boton.textContent = 'Sin cupos';
-                        card.classList.add('agotado');
-                    } else {
-                        boton.disabled = false;
-                    }
-                } else {
-                    alert(data.mensaje);
-                    boton.disabled = false;
-                }
-            } catch (err) {
-                alert('No se pudo conectar con el servidor.');
-                boton.disabled = false;
-            }
-        }
-
-        // --- Editar (abre modal) ---
+        // --- Editar ---
         document.querySelectorAll('.btn-editar').forEach(function (boton) {
             boton.addEventListener('click', function () {
                 cardEnEdicion = boton.closest('.card');
-
-                document.getElementById('edit-nombre').value = cardEnEdicion.querySelector('.nombre').textContent.trim();
-                document.getElementById('edit-descripcion').value = cardEnEdicion.querySelector('.descripcion').textContent.trim();
-                document.getElementById('edit-precio').value = cardEnEdicion.querySelector('.precio').textContent.replace('$', '').trim();
-                document.getElementById('edit-icono').value = cardEnEdicion.querySelector('.icono').textContent.trim();
-                document.getElementById('edit-stock').value = cardEnEdicion.querySelector('.stock-valor').textContent.trim();
-
+                const c = cardEnEdicion;
+                document.getElementById('modal-titulo').textContent =
+                    c.dataset.tipo === 'S' ? 'Editar servicio' : 'Editar producto';
+                document.getElementById('edit-nombre').value = c.querySelector('.nombre').textContent.trim();
+                document.getElementById('edit-descripcion').value = c.querySelector('.descripcion').textContent.trim();
+                document.getElementById('edit-precio').value = c.querySelector('.precio').textContent.replace('$', '').trim();
+                document.getElementById('edit-icono').value = c.querySelector('.icono').textContent.trim();
+                document.getElementById('edit-stock').value = c.dataset.stock;
                 overlay.classList.add('activo');
+                document.getElementById('edit-nombre').focus();
             });
         });
 
-        document.getElementById('btn-cancelar').addEventListener('click', function () {
-            overlay.classList.remove('activo');
-            cardEnEdicion = null;
-        });
+        function cerrarModal() { overlay.classList.remove('activo'); cardEnEdicion = null; }
+        document.getElementById('btn-cancelar').addEventListener('click', cerrarModal);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) cerrarModal(); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') cerrarModal(); });
 
         document.getElementById('btn-guardar').addEventListener('click', async function () {
             if (!cardEnEdicion) return;
-            const id = cardEnEdicion.dataset.id;
-
-            const cuerpo = {
+            const card = cardEnEdicion;
+            const r = await api(`/api/servicios/${card.dataset.id}`, 'PUT', {
                 nombre: document.getElementById('edit-nombre').value,
                 descripcion: document.getElementById('edit-descripcion').value,
                 precio: document.getElementById('edit-precio').value,
                 icono: document.getElementById('edit-icono').value,
                 stock: parseInt(document.getElementById('edit-stock').value, 10) || 0
-            };
+            });
+            if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
 
-            try {
-                const res = await fetch(`/api/servicios/${id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(cuerpo)
-                });
-                const data = await res.json();
-
-                if (data.estado === 'exito') {
-                    const s = data.datos;
-                    cardEnEdicion.querySelector('.icono').textContent = s.icono;
-                    cardEnEdicion.querySelector('.nombre').textContent = s.nombre;
-                    cardEnEdicion.querySelector('.descripcion').textContent = s.descripcion;
-                    cardEnEdicion.querySelector('.precio').textContent = `$${s.precio}`;
-                    cardEnEdicion.querySelector('.stock-valor').textContent = s.stock;
-
-                    const btnComprar = cardEnEdicion.querySelector('.btn-comprar');
-                    if (s.stock <= 0) {
-                        btnComprar.disabled = true;
-                        btnComprar.textContent = 'Sin cupos';
-                        cardEnEdicion.classList.add('agotado');
-                    } else {
-                        btnComprar.disabled = false;
-                        btnComprar.textContent = 'Reservar';
-                        cardEnEdicion.classList.remove('agotado');
-                    }
-
-                    overlay.classList.remove('activo');
-                    cardEnEdicion = null;
-                    refrescarNotificaciones();
-                } else {
-                    alert(data.mensaje);
-                }
-            } catch (err) {
-                alert('No se pudo conectar con el servidor.');
+            const s = r.data.datos;
+            card.querySelector('.icono').textContent = s.icono;
+            card.querySelector('.nombre').textContent = s.nombre;
+            card.querySelector('.descripcion').textContent = s.descripcion;
+            card.querySelector('.precio').textContent = `$${s.precio}`;
+            card.dataset.stock = s.stock;
+            if (card.dataset.tipo === 'P') {
+                card.querySelector('.stock-valor').textContent = s.stock;
+                const btn = card.querySelector('.btn-reservar');
+                btn.disabled = s.stock <= 0;
+                btn.textContent = s.stock <= 0 ? 'Agotado' : 'Reservar';
+                card.classList.toggle('agotado', s.stock <= 0);
             }
+            cerrarModal();
+            aviso('Cambios guardados.');
+            refrescarNotificaciones();
         });
 
         // --- Eliminar ---
         document.querySelectorAll('.btn-eliminar').forEach(function (boton) {
             boton.addEventListener('click', async function () {
                 const card = boton.closest('.card');
-                const id = card.dataset.id;
-
-                if (!confirm('¿Seguro que quieres eliminar este servicio?')) return;
-
-                try {
-                    const res = await fetch(`/api/servicios/${id}`, { method: 'DELETE' });
-                    const data = await res.json();
-
-                    if (data.estado === 'exito') {
-                        card.remove();
-                        refrescarNotificaciones();
-                    } else {
-                        alert(data.mensaje);
-                    }
-                } catch (err) {
-                    alert('No se pudo conectar con el servidor.');
-                }
+                if (!confirm('¿Seguro que quieres eliminar este elemento del catálogo?')) return;
+                const r = await api(`/api/servicios/${card.dataset.id}`, 'DELETE');
+                if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+                card.remove();
+                aviso('Eliminado del catálogo.');
+                refrescarNotificaciones();
             });
         });
-
-        // --- Notificaciones (MongoDB) ---
-        const panel = document.getElementById('panel');
-        const badge = document.getElementById('badge');
-        const listaNotif = document.getElementById('lista-notif');
-
-        function pintarBadge(n) {
-            badge.textContent = n > 99 ? '99+' : n;
-            badge.classList.toggle('oculto', n === 0);
-        }
-
-        function pintarNotificaciones(datos) {
-            listaNotif.replaceChildren();
-            if (datos.length === 0) {
-                const vacio = document.createElement('div');
-                vacio.className = 'panel-vacio';
-                vacio.textContent = 'No hay notificaciones';
-                listaNotif.appendChild(vacio);
-                return;
-            }
-            datos.forEach(function (n) {
-                // Se usa textContent (no innerHTML): los nombres los puede editar el usuario.
-                const div = document.createElement('div');
-                div.className = 'notif ' + n.prioridad + (n.leida ? '' : ' no-leida');
-                const t = document.createElement('div'); t.className = 'n-titulo'; t.textContent = n.titulo;
-                const m = document.createElement('div'); m.className = 'n-msg'; m.textContent = n.mensaje;
-                const f = document.createElement('div'); f.className = 'n-fecha';
-                f.textContent = new Date(n.fecha).toLocaleString('es-CO');
-                div.append(t, m, f);
-                div.addEventListener('click', async function () {
-                    if (n.leida) return;
-                    await fetch(`/api/notificaciones/${n.id}/leer`, { method: 'PATCH' });
-                    refrescarNotificaciones();
-                });
-                listaNotif.appendChild(div);
-            });
-        }
-
-        async function refrescarNotificaciones() {
-            try {
-                const res = await fetch('/api/notificaciones?limite=20');
-                const data = await res.json();
-                if (data.estado === 'exito') {
-                    pintarBadge(data.no_leidas);
-                    pintarNotificaciones(data.datos);
-                }
-            } catch (err) { /* sin conexión: se reintenta en el siguiente ciclo */ }
-        }
-
-        document.getElementById('btn-campana').addEventListener('click', function () {
-            panel.classList.toggle('activo');
-            if (panel.classList.contains('activo')) refrescarNotificaciones();
-        });
-
-        document.getElementById('btn-leer-todas').addEventListener('click', async function () {
-            await fetch('/api/notificaciones/leer-todas', { method: 'PATCH' });
-            refrescarNotificaciones();
-        });
-
-        // Consulta cada 10 s el contador (solo si la pestaña está visible)
-        setInterval(function () {
-            if (!document.hidden) refrescarNotificaciones();
-        }, 10000);
-        refrescarNotificaciones();
     </script>
 </body>
 </html>

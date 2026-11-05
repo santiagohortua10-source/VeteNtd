@@ -1,12 +1,18 @@
+import os
 import re
 
 from flask import Flask, jsonify, render_template, request
 
+import clientes
 import db
 import mongo
 import notificaciones
 
 app = Flask(__name__)
+# Firma la cookie de sesión del portal de clientes. En producción define SECRET_KEY en el .env.
+app.secret_key = os.getenv("SECRET_KEY", "clave-solo-para-desarrollo-cambiala")
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.register_blueprint(clientes.bp)
 
 # La página muestra servicios y productos en una sola lista, pero en la base de datos
 # viven en dos tablas. Para que los ids no choquen, cada item usa un prefijo:

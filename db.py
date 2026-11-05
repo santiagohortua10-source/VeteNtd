@@ -54,3 +54,18 @@ def ejecutar(sql, params=()):
             raise
         finally:
             cur.close()
+
+@contextmanager
+def transaccion():
+    """Una sola conexión para varias consultas que deben ir juntas.
+    Hace commit al salir bien y rollback si algo falla. Entrega un cursor (dict)."""
+    with conexion() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            yield cur
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
