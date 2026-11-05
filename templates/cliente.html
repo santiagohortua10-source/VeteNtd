@@ -13,7 +13,6 @@
     <header class="barra">
         <a class="marca" href="/">🐾 PawCare</a>
         <nav aria-label="Principal">
-            <a href="/">Catálogo</a>
             <a href="/cliente" class="activo">Portal de clientes</a>
         </nav>
         {% if cliente %}
@@ -21,6 +20,10 @@
             <span>Hola, <strong>{{ cliente.nombre.split(' ')[0] }}</strong></span>
             <button class="btn btn-suave btn-chico" id="btn-salir">Salir</button>
         </div>
+        <!-- Carrito de compras -->
+        <button class="campana" id="btn-carrito" aria-label="Ver mi carrito">🛒
+            <span class="badge oculto" id="badge-carrito">0</span>
+        </button>
         <!-- Notificaciones del cliente (MongoDB) -->
         <div class="campana-wrap">
             <button class="campana" id="btn-campana" aria-label="Notificaciones">🔔
@@ -42,7 +45,7 @@
         <!-- ================= Ingreso / registro ================= -->
         <section class="acceso">
             <h1 class="titulo-pagina">Portal de clientes</h1>
-            <p class="subtitulo">Agenda citas con tu veterinario, registra a tus mascotas y recibe avisos de cada servicio.</p>
+            <p class="subtitulo">Agenda citas con tu veterinario, compra productos para tu mascota y recibe avisos de cada servicio.</p>
 
             <div class="pestanas" role="tablist">
                 <button class="pestana" role="tab" aria-selected="true" data-form="login">Ingresar</button>
@@ -111,11 +114,13 @@
 {% else %}
         <!-- ================= Portal ================= -->
         <h1 class="titulo-pagina">Hola, {{ cliente.nombre.split(' ')[0] }} 👋</h1>
-        <p class="subtitulo">Agenda una cita, revisa tus próximas visitas o administra a tus mascotas.</p>
+        <p class="subtitulo">Agenda una cita, compra productos, revisa tus visitas o administra a tus mascotas.</p>
 
         <div class="pestanas" role="tablist">
             <button class="pestana" role="tab" aria-selected="true" data-vista="agendar">📅 Agendar cita</button>
+            <button class="pestana" role="tab" aria-selected="false" data-vista="tienda">🛒 Tienda</button>
             <button class="pestana" role="tab" aria-selected="false" data-vista="citas">Mis citas <span class="cuenta" id="cuenta-citas" hidden></span></button>
+            <button class="pestana" role="tab" aria-selected="false" data-vista="compras">Mis compras</button>
             <button class="pestana" role="tab" aria-selected="false" data-vista="mascotas">Mis mascotas</button>
         </div>
 
@@ -158,9 +163,34 @@
             </div>
         </section>
 
+        <!-- ---- Tienda ---- -->
+        <section id="vista-tienda" hidden>
+            <div class="agenda">
+                <div>
+                    <div class="barra-seccion">
+                        <h2 style="font-size:1.15rem">Productos para tu mascota</h2>
+                    </div>
+                    <div class="productos" id="lista-productos"></div>
+                </div>
+
+                <aside class="caja resumen" aria-label="Tu carrito">
+                    <h2>Tu carrito</h2>
+                    <div id="carrito-items"></div>
+                    <div class="total"><span>Total</span><strong id="carrito-total">$0</strong></div>
+                    <button class="btn btn-primario btn-bloque" id="btn-comprar" disabled>Confirmar compra</button>
+                    <p class="ayuda">El pago se realiza al recoger tu pedido en la clínica.</p>
+                </aside>
+            </div>
+        </section>
+
         <!-- ---- Mis citas ---- -->
         <section id="vista-citas" hidden>
             <div id="lista-citas"></div>
+        </section>
+
+        <!-- ---- Mis compras ---- -->
+        <section id="vista-compras" hidden>
+            <div id="lista-compras"></div>
         </section>
 
         <!-- ---- Mis mascotas ---- -->
@@ -219,9 +249,9 @@
         <script>
             const refrescarNotificaciones = iniciarNotificaciones('/api/cliente/notificaciones');
             const EMOJI = { Perro: '🐶', Gato: '🐱', Ave: '🐦', Conejo: '🐰', Otro: '🐾' };
-            const VISTAS = ['agendar', 'citas', 'mascotas'];
+            const VISTAS = ['agendar', 'tienda', 'citas', 'compras', 'mascotas'];
             const estado = {
-                mascotas: [], servicios: [], vets: [], citas: [],
+                mascotas: [], servicios: [], vets: [], citas: [], productos: [], compras: [], carrito: {},
                 sel: { mascota: null, servicio: null, vet: null, fecha: '', hora: null },
                 horas: null, diaTexto: ''          // horas: null = aún no se consulta
             };
@@ -513,9 +543,157 @@
                 pintarTodo();
             });
 
+            // ---------- Tienda y carrito ----------
+            const MAX_UNIDADES = 10;
+            const dinero = n => '$' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');   // 189900 -> $189.900
+            const prod = id => estado.productos.find(p => p.id === id);
+            const enCarrito = id => estado.carrito[id] || 0;
+            const unidadesCarrito = () => Object.values(estado.carrito).reduce((a, b) => a + b, 0);
+            const totalCarrito = () => Object.entries(estado.carrito)
+                .reduce((t, [id, c]) => t + prod(Number(id)).valor * c, 0);
+
+            function cambiarCantidad(id, delta) {
+                const p = prod(id);
+                const nueva = enCarrito(id) + delta;
+                if (nueva > Math.min(MAX_UNIDADES, p.stock)) {
+                    aviso(p.stock < MAX_UNIDADES
+                        ? `Solo hay ${p.stock} unidades de «${p.nombre}».`
+                        : `Máximo ${MAX_UNIDADES} unidades por producto.`, 'error');
+                    return;
+                }
+                if (nueva <= 0) delete estado.carrito[id]; else estado.carrito[id] = nueva;
+                pintarTienda();
+            }
+
+            function controlCantidad(p) {
+                return el('div', { class: 'cantidad' },
+                    el('button', { type: 'button', class: 'btn btn-suave btn-chico',
+                        'aria-label': `Quitar una unidad de ${p.nombre}`, onclick: () => cambiarCantidad(p.id, -1) }, '−'),
+                    el('span', { class: 'cantidad-num' }, String(enCarrito(p.id))),
+                    el('button', { type: 'button', class: 'btn btn-suave btn-chico',
+                        'aria-label': `Agregar una unidad de ${p.nombre}`, onclick: () => cambiarCantidad(p.id, 1) }, '+'));
+            }
+
+            function pintarProductos() {
+                const cont = $('lista-productos');
+                cont.replaceChildren();
+                if (estado.productos.length === 0) {
+                    cont.style.display = 'block';
+                    cont.appendChild(el('div', { class: 'vacio' }, 'Todavía no hay productos disponibles.'));
+                    return;
+                }
+                cont.style.display = '';
+                estado.productos.forEach(p => {
+                    const agotado = p.stock <= 0;
+                    cont.appendChild(el('article', { class: 'card' + (agotado ? ' agotado' : '') },
+                        el('div', { class: 'icono' }, p.icono),
+                        el('h3', { class: 'nombre' }, p.nombre),
+                        el('p', { class: 'descripcion' }, p.descripcion),
+                        el('div', { class: 'precio' }, '$' + p.precio),
+                        el('div', { class: 'stock' }, agotado ? 'Agotado' : 'Disponibles: ',
+                            agotado ? null : el('strong', null, String(p.stock))),
+                        el('div', { class: 'acciones' },
+                            enCarrito(p.id) > 0
+                                ? controlCantidad(p)
+                                : el('button', { type: 'button', class: 'btn btn-primario', disabled: agotado,
+                                    onclick: () => cambiarCantidad(p.id, 1) }, agotado ? 'Agotado' : '🛒 Agregar al carrito'))));
+                });
+            }
+
+            function pintarCarrito() {
+                const cont = $('carrito-items');
+                cont.replaceChildren();
+                const ids = Object.keys(estado.carrito).map(Number);
+                if (ids.length === 0) {
+                    cont.appendChild(el('p', { class: 'ayuda' }, 'Tu carrito está vacío. Agrega productos desde la lista.'));
+                }
+                ids.forEach(id => {
+                    const p = prod(id);
+                    cont.appendChild(el('div', { class: 'linea-carrito' },
+                        el('div', null,
+                            el('div', { class: 'lc-nombre' }, `${p.icono} ${p.nombre}`),
+                            el('div', { class: 'lc-detalle' }, `${estado.carrito[id]} × $${p.precio}`)),
+                        el('strong', null, dinero(p.valor * estado.carrito[id])),
+                        el('button', { type: 'button', class: 'lc-quitar', 'aria-label': `Quitar ${p.nombre} del carrito`,
+                            onclick: () => { delete estado.carrito[id]; pintarTienda(); } }, '✕')));
+                });
+                $('carrito-total').textContent = dinero(totalCarrito());
+                $('btn-comprar').disabled = ids.length === 0;
+                const n = unidadesCarrito();
+                $('badge-carrito').textContent = n;
+                $('badge-carrito').classList.toggle('oculto', n === 0);
+            }
+
+            function pintarTienda() { pintarProductos(); pintarCarrito(); }
+
+            async function cargarProductos() {
+                const r = await api('/api/cliente/productos');
+                if (sesionCaducada(r)) return;
+                if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+                estado.productos = r.data.datos;
+                // El stock pudo cambiar: se ajusta el carrito a lo que realmente hay
+                for (const id of Object.keys(estado.carrito)) {
+                    const p = prod(Number(id));
+                    const tope = p ? Math.min(MAX_UNIDADES, p.stock) : 0;
+                    if (tope <= 0) delete estado.carrito[id];
+                    else if (estado.carrito[id] > tope) estado.carrito[id] = tope;
+                }
+                pintarTienda();
+            }
+
+            $('btn-carrito').addEventListener('click', () => mostrarVista('tienda'));
+
+            $('btn-comprar').addEventListener('click', async function () {
+                const items = Object.entries(estado.carrito).map(([id, c]) => ({ producto: Number(id), cantidad: c }));
+                if (items.length === 0) return;
+                if (!confirm(`¿Confirmar la compra por ${dinero(totalCarrito())}?`)) return;
+                this.disabled = true;
+                const r = await api('/api/cliente/compras', 'POST', { items });
+                if (!r.ok) {
+                    if (sesionCaducada(r)) return;
+                    aviso(r.data.mensaje, 'error');
+                    await cargarProductos();          // actualiza stock y ajusta el carrito
+                    return;
+                }
+                aviso(`¡Compra confirmada! Pedido #${r.data.datos.id} por $${r.data.datos.total}.`);
+                estado.carrito = {};
+                await Promise.all([cargarProductos(), cargarCompras()]);
+                refrescarNotificaciones();
+                mostrarVista('compras');
+            });
+
+            // ---------- Mis compras ----------
+            async function cargarCompras() {
+                const r = await api('/api/cliente/compras');
+                if (sesionCaducada(r)) return;
+                if (r.ok) estado.compras = r.data.datos;
+                pintarCompras();
+            }
+
+            function pintarCompras() {
+                const cont = $('lista-compras');
+                cont.replaceChildren();
+                cont.appendChild(el('h2', { class: 'titulo-seccion' }, 'Mis compras'));
+                if (estado.compras.length === 0) {
+                    cont.appendChild(el('div', { class: 'vacio' }, 'Aún no has comprado nada.',
+                        el('div', null, el('button', { class: 'btn btn-primario', onclick: () => mostrarVista('tienda') }, 'Ir a la tienda'))));
+                    return;
+                }
+                cont.appendChild(el('div', { class: 'lista-citas' }, ...estado.compras.map(c =>
+                    el('article', { class: 'cita' },
+                        el('div', { class: 'ticket' }, el('div', { class: 'dia' }, String(c.dia_num)), el('div', { class: 'mes' }, c.mes_corto)),
+                        el('div', null,
+                            el('h3', null, `Pedido #${c.id}`, el('span', { class: 'estado agendada' }, c.estado)),
+                            el('p', { class: 'detalle' }, el('span', { class: 'hora-cita' }, cap(c.fecha_texto))),
+                            ...c.items.map(i => el('p', { class: 'detalle' }, `${i.icono} ${i.cantidad} × `,
+                                el('strong', null, i.nombre), ` · $${i.subtotal}`))),
+                        el('strong', { class: 'total-compra' }, `$${c.total}`)))));
+            }
+
             // ---------- Arranque ----------
             function pintarTodo() {
                 pintarMascotasSelector(); pintarServicios(); pintarVets(); pintarHoras(); pintarResumen(); pintarMascotas();
+                pintarTienda();
             }
 
             $('btn-salir').addEventListener('click', async function () {
@@ -524,20 +702,25 @@
             });
 
             (async function iniciar() {
-                const [m, s, v, c] = await Promise.all([
+                const respuestas = await Promise.all([
                     api('/api/cliente/mascotas'), api('/api/cliente/servicios'),
-                    api('/api/cliente/veterinarios'), api('/api/cliente/citas')
+                    api('/api/cliente/veterinarios'), api('/api/cliente/citas'),
+                    api('/api/cliente/productos'), api('/api/cliente/compras')
                 ]);
-                if ([m, s, v, c].some(sesionCaducada)) return;
-                const fallo = [m, s, v, c].find(r => !r.ok);
+                if (respuestas.some(sesionCaducada)) return;
+                const [m, s, v, c, pr, co] = respuestas;
+                const fallo = respuestas.find(r => !r.ok);
                 if (fallo) aviso(fallo.data.mensaje, 'error');
                 estado.mascotas = m.ok ? m.data.datos : [];
                 estado.servicios = s.ok ? s.data.datos : [];
                 estado.vets = v.ok ? v.data.datos : [];
                 estado.citas = c.ok ? c.data.datos : [];
+                estado.productos = pr.ok ? pr.data.datos : [];
+                estado.compras = co.ok ? co.data.datos : [];
                 if (estado.mascotas.length === 1) estado.sel.mascota = estado.mascotas[0].id;   // atajo: una sola mascota
                 pintarTodo();
                 pintarCitas();
+                pintarCompras();
                 const inicial = location.hash.slice(1);
                 mostrarVista(VISTAS.includes(inicial) ? inicial : 'agendar');
             })();

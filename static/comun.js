@@ -44,7 +44,7 @@ function aviso(mensaje, tipo = 'exito') {
 // `base` es la ruta de la API: '/api/notificaciones' (equipo) o '/api/cliente/notificaciones' (cliente).
 const ICONOS_NOTIF = {
     cita_agendada: '📅', cita_cancelada: '🚫', reserva_creada: '🛒', stock_bajo: '⚠️',
-    sin_cupos: '⛔', servicio_actualizado: '✏️', servicio_eliminado: '🗑️'
+    sin_cupos: '⛔', servicio_actualizado: '✏️', servicio_eliminado: '🗑️', compra_realizada: '🛍️'
 };
 
 function iniciarNotificaciones(base) {

@@ -505,6 +505,159 @@ def cancelar(cid, cita_id):
     _notificar_cita(cita, cid, _cliente_actual(cid)["nombre"], cancelada=True)
     return _ok(datos=cita)
 
+# ---------- Tienda: productos y compras ----------
+CONFIRMADO = "Confirmado"
+MAX_POR_PRODUCTO = 10          # unidades máximas de un mismo producto por compra
+MAX_PRODUCTOS_DISTINTOS = 20
+
+
+class _CompraInvalida(Exception):
+    """Se lanza dentro de la transacción para que haga ROLLBACK de todo lo descontado."""
+    def __init__(self, mensaje, codigo=400):
+        super().__init__(mensaje)
+        self.mensaje, self.codigo = mensaje, codigo
+
+
+@bp.get("/api/cliente/productos")
+@requiere_cliente
+def productos(cid):
+    filas = db.consultar(
+        "SELECT ID_Producto AS id, TipoProducto AS nombre, Descripcion AS descripcion, "
+        "ValorProducto AS valor, Icono AS icono, Stock AS stock "
+        "FROM PRODUCTOS ORDER BY ID_Producto")
+    for f in filas:
+        f["precio"] = _formatear_precio(f["valor"])
+    return _ok(datos=filas)
+
+
+def _leer_carrito(d):
+    """Devuelve ({id_producto: cantidad}, None) o (None, mensaje_de_error)."""
+    items = d.get("items")
+    if not isinstance(items, list) or not items:
+        return None, "Tu carrito está vacío"
+    carrito = {}
+    for it in items:
+        try:
+            pid, cant = int(it.get("producto")), int(it.get("cantidad"))
+        except (AttributeError, TypeError, ValueError):
+            return None, "El carrito tiene datos inválidos"
+        if cant < 1:
+            return None, "Las cantidades deben ser mayores a cero"
+        carrito[pid] = carrito.get(pid, 0) + cant
+    if len(carrito) > MAX_PRODUCTOS_DISTINTOS:
+        return None, f"Máximo {MAX_PRODUCTOS_DISTINTOS} productos distintos por compra"
+    if any(c > MAX_POR_PRODUCTO for c in carrito.values()):
+        return None, f"Máximo {MAX_POR_PRODUCTO} unidades de cada producto por compra"
+    return carrito, None
+
+
+def _listar_compras(cid, pedido_id=None):
+    sql = ("SELECT ID_Pedido AS id, Fecha AS fecha, Total AS total, Estado AS estado "
+           "FROM PEDIDOS WHERE ID_Cliente = %s")
+    params = (cid,)
+    if pedido_id:
+        sql += " AND ID_Pedido = %s"
+        params += (pedido_id,)
+    pedidos = db.consultar(sql + " ORDER BY Fecha DESC, ID_Pedido DESC LIMIT 50", params)
+    if not pedidos:
+        return []
+
+    marcas = ", ".join(["%s"] * len(pedidos))          # solo "%s": nada del usuario va en el SQL
+    detalles = db.consultar(
+        "SELECT d.ID_Pedido AS pedido, d.Cantidad AS cantidad, d.PrecioUnitario AS unitario, "
+        "p.TipoProducto AS nombre, p.Icono AS icono "
+        "FROM PEDIDO_DETALLE d JOIN PRODUCTOS p ON p.ID_Producto = d.ID_Producto "
+        f"WHERE d.ID_Pedido IN ({marcas}) ORDER BY d.ID_Detalle",
+        tuple(p["id"] for p in pedidos))
+    por_pedido = {}
+    for d in detalles:
+        por_pedido.setdefault(d["pedido"], []).append({
+            "nombre": d["nombre"], "icono": d["icono"], "cantidad": d["cantidad"],
+            "unitario": _formatear_precio(d["unitario"]),
+            "subtotal": _formatear_precio(d["unitario"] * d["cantidad"])})
+
+    return [{
+        "id": p["id"], "estado": p["estado"], "total": _formatear_precio(p["total"]),
+        "dia_num": p["fecha"].day, "mes_corto": MESES[p["fecha"].month - 1][:3],
+        "fecha_texto": f"{dia_texto(p['fecha'].date())} · "
+                       f"{hora_texto(p['fecha'].hour * 60 + p['fecha'].minute)}",
+        "items": por_pedido.get(p["id"], []),
+    } for p in pedidos]
+
+
+def _notificar_compra(cid, nombre_cliente, compra, stocks):
+    """Una notificación para el cliente, otra para el equipo y alertas de stock para el equipo."""
+    resumen = ", ".join(f"{i['cantidad']} × {i['nombre']}" for i in compra["items"])
+    datos = {"pedido_id": compra["id"], "total": compra["total"],
+             "unidades": sum(i["cantidad"] for i in compra["items"])}
+    notificaciones.crear(
+        "compra_realizada", "Compra confirmada",
+        _frase(f"Tu pedido #{compra['id']} por ${compra['total']} está confirmado: {resumen}"),
+        datos=datos, cliente_id=cid)
+    notificaciones.crear(
+        "compra_realizada", "Nueva compra",
+        _frase(f"{nombre_cliente} compró {resumen} (${compra['total']})"), datos=datos)
+
+    for s in stocks:
+        ref = {"id": s["id"], "nombre": s["nombre"]}
+        if s["stock"] <= 0:
+            notificaciones.crear("sin_cupos", "Sin stock",
+                                 f"«{s['nombre']}» se quedó sin stock.", item=ref, prioridad="alta")
+        elif s["stock"] <= notificaciones.UMBRAL_STOCK_BAJO:
+            notificaciones.crear("stock_bajo", "Stock bajo",
+                                 f"«{s['nombre']}» tiene solo {s['stock']} disponibles.",
+                                 item=ref, datos={"stock_restante": s["stock"]}, prioridad="alta")
+
+
+@bp.get("/api/cliente/compras")
+@requiere_cliente
+def compras(cid):
+    return _ok(datos=_listar_compras(cid))
+
+
+@bp.post("/api/cliente/compras")
+@requiere_cliente
+def comprar(cid):
+    carrito, mensaje = _leer_carrito(_cuerpo())
+    if mensaje:
+        return _error(mensaje)
+
+    stocks, lineas, total = [], [], 0
+    try:
+        with db.transaccion() as cur:
+            consulta = _consulta_de(cur)
+            # Orden fijo por id: dos compras simultáneas no se bloquean entre sí.
+            for pid in sorted(carrito):
+                cant = carrito[pid]
+                filas = consulta(
+                    "SELECT TipoProducto AS nombre, ValorProducto AS valor, Stock AS stock "
+                    "FROM PRODUCTOS WHERE ID_Producto = %s FOR UPDATE", (pid,))
+                if not filas:
+                    raise _CompraInvalida("Uno de los productos ya no existe", 404)
+                prod = filas[0]
+                if prod["stock"] < cant:
+                    raise _CompraInvalida(
+                        f"«{prod['nombre']}» está agotado" if prod["stock"] <= 0
+                        else f"Solo quedan {prod['stock']} unidades de «{prod['nombre']}»", 409)
+                cur.execute("UPDATE PRODUCTOS SET Stock = Stock - %s WHERE ID_Producto = %s",
+                            (cant, pid))
+                total += prod["valor"] * cant
+                lineas.append((pid, cant, prod["valor"]))
+                stocks.append({"id": f"P{pid}", "nombre": prod["nombre"],
+                               "stock": prod["stock"] - cant})
+
+            cur.execute("INSERT INTO PEDIDOS (ID_Cliente, Fecha, Total, Estado) "
+                        "VALUES (%s, %s, %s, %s)", (cid, ahora(), total, CONFIRMADO))
+            pedido_id = cur.lastrowid
+            for pid, cant, valor in lineas:
+                cur.execute("INSERT INTO PEDIDO_DETALLE (ID_Pedido, ID_Producto, Cantidad, "
+                            "PrecioUnitario) VALUES (%s, %s, %s, %s)", (pedido_id, pid, cant, valor))
+    except _CompraInvalida as e:
+        return _error(e.mensaje, e.codigo)      # la transacción ya hizo rollback
+
+    compra = _listar_compras(cid, pedido_id)[0]
+    _notificar_compra(cid, _cliente_actual(cid)["nombre"], compra, stocks)   # Mongo: no rompe la compra
+    return _ok(datos=compra)
 
 # ---------- Notificaciones del cliente (MongoDB) ----------
 @bp.get("/api/cliente/notificaciones")

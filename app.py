@@ -1,7 +1,7 @@
 import os
 import re
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 import clientes
 import db
@@ -169,6 +169,12 @@ def _notificar_cambio_stock(item):
 # ---------- Rutas ----------
 @app.route('/')
 def inicio():
+    # Siempre se entra por el portal: ahí está el ingreso / registro
+    return redirect(url_for('clientes.portal'))
+
+
+@app.route('/equipo')
+def equipo():
     return render_template('index.html', servicios=listar_items(),
                            no_leidas=notificaciones.contar_no_leidas_seguro())
 
