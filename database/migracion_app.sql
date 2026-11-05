@@ -1,5 +1,6 @@
 -- =====================================================
 -- Portal de clientes: ajustes de tablas, tabla USUARIOS + veterinarios y horarios de ejemplo
+-- Tienda: tablas PEDIDOS y PEDIDO_DETALLE para las compras de productos
 -- Ejecutar UNA sola vez, después de schema.sql
 -- =====================================================
 USE veterinaria;
@@ -71,3 +72,37 @@ FROM EMPLEADO e
 JOIN (SELECT 'Martes' AS dia UNION ALL SELECT 'Jueves' UNION ALL SELECT 'Sábado') d
 JOIN (SELECT '10:00' AS ini, '13:00' AS fin UNION ALL SELECT '15:00', '19:00') b
 WHERE e.NombreEmpleado = 'Dra. Camila Torres';
+
+-- =====================================================
+-- Tienda: compras de productos desde el portal de clientes
+-- (No se usan FACTURACION ni DETALLE_FACTURA: exigen producto y servicio a la vez,
+--  y TotalPagar es DECIMAL(5,2), muy pequeño para precios en pesos.)
+-- =====================================================
+
+-- Un pedido por compra confirmada. Total se guarda en pesos enteros.
+CREATE TABLE IF NOT EXISTS PEDIDOS (
+    ID_Pedido   INT AUTO_INCREMENT NOT NULL,
+    ID_Cliente  INT NOT NULL,
+    Fecha       DATETIME NOT NULL,
+    Total       INT NOT NULL,
+    Estado      VARCHAR(20) NOT NULL DEFAULT 'Confirmado',
+    PRIMARY KEY (ID_Pedido),
+    KEY idx_pedidos_cliente (ID_Cliente, Fecha),
+    CONSTRAINT fk_pedidos_cliente
+        FOREIGN KEY (ID_Cliente) REFERENCES CLIENTE (ID_Cliente)
+);
+
+-- Las líneas de cada pedido. PrecioUnitario guarda el precio del momento de la compra,
+-- así el historial no cambia si luego se edita el precio del producto.
+CREATE TABLE IF NOT EXISTS PEDIDO_DETALLE (
+    ID_Detalle      INT AUTO_INCREMENT NOT NULL,
+    ID_Pedido       INT NOT NULL,
+    ID_Producto     INT NOT NULL,
+    Cantidad        INT NOT NULL,
+    PrecioUnitario  INT NOT NULL,
+    PRIMARY KEY (ID_Detalle),
+    CONSTRAINT fk_pdet_pedido
+        FOREIGN KEY (ID_Pedido) REFERENCES PEDIDOS (ID_Pedido) ON DELETE CASCADE,
+    CONSTRAINT fk_pdet_producto
+        FOREIGN KEY (ID_Producto) REFERENCES PRODUCTOS (ID_Producto)
+);
