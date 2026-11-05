@@ -51,6 +51,31 @@ La app lee y guarda todo en MySQL 8+ (base `veterinaria`). Necesitas tener MySQL
 
 **Cómo se relaciona la página con las tablas:** la lista mezcla servicios (`CATALOGO_SERVICIOS`) y productos (`PRODUCTOS`), así que los ids llevan un prefijo: `S1` es el servicio 1 y `P1` es el producto 1.
 
+## 🍃 Base de datos NoSQL (MongoDB Atlas) — Notificaciones
+
+La app usa **dos bases de datos**:
+
+| Base | Qué guarda | Por qué |
+|------|-----------|---------|
+| **MySQL** | Servicios, productos, reservas, facturas, clientes… | Datos estructurados, con relaciones y transacciones |
+| **MongoDB Atlas** | Colección única `notificaciones` | Datos dinámicos y de alta frecuencia, sin esquema rígido |
+
+1. Crea el cluster en Atlas (ver guía paso a paso) y copia tu cadena de conexión.
+2. Agrega a tu `.env` las variables `MONGO_URI` y `MONGO_DB` (ver `.env.example`).
+3. Instala dependencias (`pip install -r requirements.txt`) y crea la colección con sus índices:
+```bash
+   python database/mongo_setup.py
+```
+4. Ejecuta `python app.py`. Aparece una campana 🔔 arriba a la derecha.
+
+Las notificaciones se generan solas al reservar (reserva creada, stock bajo, sin cupos), editar o eliminar un servicio.
+Si MongoDB falla, la app **sigue funcionando** (solo se pierde la notificación y queda registrada en el log).
+
+### Endpoints de notificaciones
+- `GET   /api/notificaciones?solo_no_leidas=true&limite=20`
+- `PATCH /api/notificaciones/<id>/leer`
+- `PATCH /api/notificaciones/leer-todas`
+
 ## 🧪 Cómo probar la API con Postman
 
 Con el servidor corriendo (`python app.py`), abre Postman y prueba los siguientes endpoints:

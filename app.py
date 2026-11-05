@@ -3,6 +3,8 @@ import re
 from flask import Flask, jsonify, render_template, request
 
 import db
+import mongo
+import notificaciones
 
 app = Flask(__name__)
 
@@ -123,10 +125,46 @@ def error_base_de_datos(e):
             "Revisa tu archivo .env y que MySQL esté encendido."), 503
 
 
+# ---------- Errores de MongoDB (solo afectan a /api/notificaciones) ----------
+@app.errorhandler(mongo.PyMongoError)
+def error_mongo(e):
+    app.logger.error("Error de MongoDB: %s", e)
+    if request.path.startswith('/api/'):
+        return jsonify({"estado": "error",
+                        "mensaje": "No se pudo conectar con MongoDB (notificaciones)"}), 503
+    return "No se pudo conectar con MongoDB. Revisa MONGO_URI en tu .env.", 503
+
+
+def _notificar_cambio_stock(item):
+    """Genera notificaciones según el stock que quedó tras una reserva."""
+    ref = {"id": item["id"], "nombre": item["nombre"]}
+    stock = item["stock"]
+    notificaciones.crear(
+        "reserva_creada", "Nueva reserva",
+        f"Se reservó «{item['nombre']}». Quedan {stock} disponibles.",
+        item=ref, datos={"stock_restante": stock},
+    )
+    if stock <= 0:
+        notificaciones.crear(
+            "sin_cupos", "Sin cupos",
+            f"«{item['nombre']}» se quedó sin cupos/stock.",
+            item=ref, prioridad="alta",
+        )
+    elif stock <= notificaciones.UMBRAL_STOCK_BAJO:
+        notificaciones.crear(
+            "stock_bajo", "Stock bajo",
+            f"«{item['nombre']}» tiene solo {stock} disponibles.",
+            item=ref, datos={"stock_restante": stock,
+                             "umbral": notificaciones.UMBRAL_STOCK_BAJO},
+            prioridad="alta",
+        )
+
+
 # ---------- Rutas ----------
 @app.route('/')
 def inicio():
-    return render_template('index.html', servicios=listar_items())
+    return render_template('index.html', servicios=listar_items(),
+                           no_leidas=notificaciones.contar_no_leidas_seguro())
 
 
 @app.route('/api/servicios')
@@ -155,6 +193,7 @@ def reservar_servicio(item_id):
         return _no_encontrado()
     if afectadas == 0:
         return jsonify({"estado": "error", "mensaje": "Sin cupos disponibles"}), 400
+    _notificar_cambio_stock(item)  # MongoDB (no interrumpe la reserva si falla)
     return jsonify({"estado": "exito", "datos": item})
 
 
@@ -176,10 +215,19 @@ def reemplazar_servicio(item_id):
         (valores['nombre'], valores['descripcion'], valores['precio'],
          valores['icono'], valores['stock'], numero),
     )
+    actualizado = obtener_item(item_id)
+    notificaciones.crear(
+        "servicio_actualizado", "Servicio actualizado",
+        f"Se modificó «{actualizado['nombre']}» (precio ${actualizado['precio']}, "
+        f"disponibles {actualizado['stock']}).",
+        item={"id": actualizado["id"], "nombre": actualizado["nombre"]},
+        datos={"precio": valores["precio"], "stock": valores["stock"]},
+        prioridad="baja",
+    )
     return jsonify({
         "estado": "exito",
         "mensaje": "Servicio actualizado correctamente",
-        "datos": obtener_item(item_id),
+        "datos": actualizado,
     })
 
 
@@ -201,11 +249,45 @@ def eliminar_servicio(item_id):
             "mensaje": "No se puede eliminar: tiene reservas o facturas asociadas",
         }), 409
 
+    notificaciones.crear(
+        "servicio_eliminado", "Servicio eliminado",
+        f"Se eliminó «{item['nombre']}» del catálogo.",
+        item={"id": item["id"], "nombre": item["nombre"]},
+    )
     return jsonify({
         "estado": "exito",
         "mensaje": "Servicio eliminado correctamente",
         "datos": item,
     })
+
+
+# ---------- Notificaciones (MongoDB) ----------
+@app.route('/api/notificaciones')
+def api_notificaciones():
+    # ?solo_no_leidas=true  &  ?limite=20 (máx. 100)
+    solo_no_leidas = request.args.get('solo_no_leidas', '').lower() in ('1', 'true', 'si')
+    try:
+        limite = min(max(int(request.args.get('limite', 20)), 1), 100)
+    except ValueError:
+        limite = 20
+    return jsonify({
+        "estado": "exito",
+        "no_leidas": notificaciones.contar_no_leidas(),
+        "datos": notificaciones.listar(solo_no_leidas, limite),
+    })
+
+
+@app.route('/api/notificaciones/<notif_id>/leer', methods=['PATCH'])
+def leer_notificacion(notif_id):
+    if not notificaciones.marcar_leida(notif_id):
+        return jsonify({"estado": "error", "mensaje": "Notificación no encontrada"}), 404
+    return jsonify({"estado": "exito", "no_leidas": notificaciones.contar_no_leidas()})
+
+
+@app.route('/api/notificaciones/leer-todas', methods=['PATCH'])
+def leer_todas_notificaciones():
+    marcadas = notificaciones.marcar_todas_leidas()
+    return jsonify({"estado": "exito", "marcadas": marcadas, "no_leidas": 0})
 
 
 if __name__ == '__main__':

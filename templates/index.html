@@ -25,6 +25,25 @@
         .card .btn-eliminar:hover { background: #dc2626; }
         .card.agotado { opacity: .6; }
 
+        /* Campana de notificaciones (MongoDB) */
+        .campana-wrap { position: fixed; top: 1rem; right: 1rem; z-index: 20; }
+        .campana { position: relative; background: #16302b; border: 1px solid #274740; color: #f3f4f6; border-radius: 50%; width: 46px; height: 46px; font-size: 1.3rem; cursor: pointer; }
+        .campana:hover { background: #1d3d37; }
+        .badge { position: absolute; top: -4px; right: -4px; background: #ef4444; color: #fff; border-radius: 999px; font-size: .7rem; font-weight: bold; min-width: 20px; padding: 2px 5px; box-sizing: border-box; }
+        .badge.oculto { display: none; }
+        .panel { display: none; position: absolute; right: 0; top: 54px; width: 340px; max-width: 90vw; max-height: 70vh; overflow-y: auto; background: #16302b; border: 1px solid #274740; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+        .panel.activo { display: block; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1rem; border-bottom: 1px solid #274740; position: sticky; top: 0; background: #16302b; }
+        .panel-header button { background: none; border: none; color: #34d399; cursor: pointer; font-size: .8rem; }
+        .notif { padding: .7rem 1rem; border-bottom: 1px solid #1d3d37; cursor: pointer; border-left: 3px solid transparent; }
+        .notif:hover { background: #1d3d37; }
+        .notif.no-leida { background: #1a3832; border-left-color: #34d399; }
+        .notif.alta.no-leida { border-left-color: #ef4444; }
+        .notif .n-titulo { font-weight: bold; font-size: .9rem; }
+        .notif .n-msg { font-size: .85rem; color: #d1d5db; margin-top: .15rem; }
+        .notif .n-fecha { font-size: .72rem; color: #9ca3af; margin-top: .25rem; }
+        .panel-vacio { padding: 1.25rem; text-align: center; color: #9ca3af; font-size: .9rem; }
+
         /* Modal de edición */
         .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); align-items: center; justify-content: center; z-index: 10; }
         .overlay.activo { display: flex; }
@@ -41,6 +60,20 @@
     </style>
 </head>
 <body>
+    <!-- Campana de notificaciones -->
+    <div class="campana-wrap">
+        <button class="campana" id="btn-campana" aria-label="Notificaciones">🔔
+            <span class="badge {% if no_leidas == 0 %}oculto{% endif %}" id="badge">{{ no_leidas }}</span>
+        </button>
+        <div class="panel" id="panel">
+            <div class="panel-header">
+                <strong>Notificaciones</strong>
+                <button id="btn-leer-todas">Marcar todas como leídas</button>
+            </div>
+            <div id="lista-notif"><div class="panel-vacio">Cargando…</div></div>
+        </div>
+    </div>
+
     <h1>🐾 Veterinaria PawCare</h1>
     <p class="subtitulo">Servicios y productos para el cuidado de tu mascota</p>
     <div class="servicios">
@@ -109,6 +142,7 @@
                 const data = await res.json();
 
                 if (data.estado === 'exito') {
+                    refrescarNotificaciones();
                     const nuevoStock = data.datos.stock;
                     card.querySelector('.stock-valor').textContent = nuevoStock;
 
@@ -189,6 +223,7 @@
 
                     overlay.classList.remove('activo');
                     cardEnEdicion = null;
+                    refrescarNotificaciones();
                 } else {
                     alert(data.mensaje);
                 }
@@ -211,6 +246,7 @@
 
                     if (data.estado === 'exito') {
                         card.remove();
+                        refrescarNotificaciones();
                     } else {
                         alert(data.mensaje);
                     }
@@ -219,6 +255,70 @@
                 }
             });
         });
+
+        // --- Notificaciones (MongoDB) ---
+        const panel = document.getElementById('panel');
+        const badge = document.getElementById('badge');
+        const listaNotif = document.getElementById('lista-notif');
+
+        function pintarBadge(n) {
+            badge.textContent = n > 99 ? '99+' : n;
+            badge.classList.toggle('oculto', n === 0);
+        }
+
+        function pintarNotificaciones(datos) {
+            listaNotif.replaceChildren();
+            if (datos.length === 0) {
+                const vacio = document.createElement('div');
+                vacio.className = 'panel-vacio';
+                vacio.textContent = 'No hay notificaciones';
+                listaNotif.appendChild(vacio);
+                return;
+            }
+            datos.forEach(function (n) {
+                // Se usa textContent (no innerHTML): los nombres los puede editar el usuario.
+                const div = document.createElement('div');
+                div.className = 'notif ' + n.prioridad + (n.leida ? '' : ' no-leida');
+                const t = document.createElement('div'); t.className = 'n-titulo'; t.textContent = n.titulo;
+                const m = document.createElement('div'); m.className = 'n-msg'; m.textContent = n.mensaje;
+                const f = document.createElement('div'); f.className = 'n-fecha';
+                f.textContent = new Date(n.fecha).toLocaleString('es-CO');
+                div.append(t, m, f);
+                div.addEventListener('click', async function () {
+                    if (n.leida) return;
+                    await fetch(`/api/notificaciones/${n.id}/leer`, { method: 'PATCH' });
+                    refrescarNotificaciones();
+                });
+                listaNotif.appendChild(div);
+            });
+        }
+
+        async function refrescarNotificaciones() {
+            try {
+                const res = await fetch('/api/notificaciones?limite=20');
+                const data = await res.json();
+                if (data.estado === 'exito') {
+                    pintarBadge(data.no_leidas);
+                    pintarNotificaciones(data.datos);
+                }
+            } catch (err) { /* sin conexión: se reintenta en el siguiente ciclo */ }
+        }
+
+        document.getElementById('btn-campana').addEventListener('click', function () {
+            panel.classList.toggle('activo');
+            if (panel.classList.contains('activo')) refrescarNotificaciones();
+        });
+
+        document.getElementById('btn-leer-todas').addEventListener('click', async function () {
+            await fetch('/api/notificaciones/leer-todas', { method: 'PATCH' });
+            refrescarNotificaciones();
+        });
+
+        // Consulta cada 10 s el contador (solo si la pestaña está visible)
+        setInterval(function () {
+            if (!document.hidden) refrescarNotificaciones();
+        }, 10000);
+        refrescarNotificaciones();
     </script>
 </body>
 </html>
