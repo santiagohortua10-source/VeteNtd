@@ -11,3 +11,4 @@ python-dotenv==1.0.1
 pymongo==4.10.1
 dnspython==2.7.0
 tzdata==2025.2
+PyJWT==2.10.1

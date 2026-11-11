@@ -2,7 +2,7 @@
 
 Página:      GET /cliente
 API (JSON):  /api/cliente/...
-La sesión guarda solo el id del cliente (cookie firmada con SECRET_KEY).
+La autenticación usa un JWT (ver auth.py) guardado en una cookie HttpOnly; el token lleva solo el id del cliente.
 """
 import os
 import re
@@ -10,9 +10,10 @@ import unicodedata
 from datetime import date, datetime, timedelta
 from functools import wraps
 
-from flask import Blueprint, jsonify, render_template, request, session
+from flask import Blueprint, jsonify, make_response, render_template, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import auth
 import db
 import notificaciones
 
@@ -119,10 +120,10 @@ def _edad(nacimiento):
 
 
 def requiere_cliente(vista):
-    """Protege la ruta: pasa el id del cliente de la sesión como primer argumento."""
+    """Protege la ruta: pasa el id del cliente (leído del JWT) como primer argumento."""
     @wraps(vista)
     def interior(*args, **kwargs):
-        cid = session.get("cliente_id")
+        cid = auth.cliente_id_actual()
         if not cid:
             return _error("Inicia sesión para continuar", 401)
         return vista(cid, *args, **kwargs)
@@ -185,16 +186,17 @@ def horas_disponibles(consulta, vet_id, duracion, fecha, mascota_id=None):
 # ---------- Página ----------
 @bp.route("/cliente")
 def portal():
-    cid = session.get("cliente_id")
+    cid = auth.cliente_id_actual()
     cliente = _cliente_actual(cid) if cid else None
-    if cid and not cliente:        # la cuenta ya no existe
-        session.clear()
     hoy = ahora().date()
-    return render_template(
+    resp = make_response(render_template(
         "cliente.html", cliente=cliente,
         no_leidas=notificaciones.contar_no_leidas_seguro(cid) if cliente else 0,
         fecha_min=hoy.isoformat(),
-        fecha_max=(hoy + timedelta(days=DIAS_MAX_AGENDA)).isoformat())
+        fecha_max=(hoy + timedelta(days=DIAS_MAX_AGENDA)).isoformat()))
+    if cid and not cliente:        # la cuenta ya no existe: se borra la cookie
+        auth.borrar_cookie(resp)
+    return resp
 
 
 # ---------- Cuenta ----------
@@ -236,9 +238,7 @@ def registro():
     except db.IntegrityError:
         return _error("Ya existe una cuenta con ese correo", 409)
 
-    session.clear()
-    session["cliente_id"] = cid
-    return _ok(datos={"nombre": nombre})
+    return auth.poner_cookie(_ok(datos={"nombre": nombre}), cid)
 
 
 @bp.post("/api/cliente/login")
@@ -250,15 +250,12 @@ def login():
                         "WHERE CorreoCliente = %s", (correo,), uno=True)
     if not fila or not fila["ClaveHash"] or not check_password_hash(fila["ClaveHash"], clave):
         return _error("Correo o contraseña incorrectos", 401)
-    session.clear()
-    session["cliente_id"] = fila["ID_Cliente"]
-    return _ok(datos={"nombre": fila["NombreCliente"]})
+    return auth.poner_cookie(_ok(datos={"nombre": fila["NombreCliente"]}), fila["ID_Cliente"])
 
 
 @bp.post("/api/cliente/logout")
 def logout():
-    session.clear()
-    return _ok()
+    return auth.borrar_cookie(_ok())
 
 
 # ---------- Mascotas ----------

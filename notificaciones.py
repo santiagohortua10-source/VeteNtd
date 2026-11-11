@@ -32,6 +32,8 @@ TIPOS = {"reserva_creada", "stock_bajo", "sin_cupos", "servicio_actualizado", "s
 PRIORIDADES = {"baja", "normal", "alta"}
 UMBRAL_STOCK_BAJO = int(os.getenv("UMBRAL_STOCK_BAJO", "3"))
 DIAS_RETENCION = int(os.getenv("NOTIF_DIAS_RETENCION", "30"))
+TIPOS = {"reserva_creada", "stock_bajo", "sin_cupos", "servicio_actualizado", "servicio_eliminado",
+         "cita_agendada", "cita_cancelada", "compra_realizada"}
 
 
 # ---------- Creación del esquema (se ejecuta con database/mongo_setup.py) ----------
