@@ -113,14 +113,16 @@
                 });
             });
 
-            // `destino` es opcional: si se indica, se va a esa página en vez de recargar
-            function enviar(formId, url, destino) {
+            // `destinoPorDefecto` es opcional. Si el servidor responde con un `destino` (el administrador
+            // siempre va a su panel), se usa ese; si no, el indicado, y si tampoco hay, se recarga la página.
+            function enviar(formId, url, destinoPorDefecto) {
                 document.getElementById(formId).addEventListener('submit', async function (e) {
                     e.preventDefault();
                     const boton = e.target.querySelector('button[type="submit"]');
                     boton.disabled = true;
                     const r = await api(url, 'POST', Object.fromEntries(new FormData(e.target)));
                     if (r.ok) {
+                        const destino = (r.data.datos && r.data.datos.destino) || destinoPorDefecto;
                         if (destino) location.href = destino; else location.reload();
                         return;
                     }

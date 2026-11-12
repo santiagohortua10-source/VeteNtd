@@ -3,6 +3,8 @@ import re
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
+import admin
+import auth
 import clientes
 import db
 import mongo
@@ -14,6 +16,7 @@ app = Flask(__name__)
 
 app.register_blueprint(clientes.bp)
 app.register_blueprint(veterinarios.bp)
+app.register_blueprint(admin.bp)
 
 # La página muestra servicios y productos en una sola lista, pero en la base de datos
 # viven en dos tablas. Para que los ids no choquen, cada item usa un prefijo:
@@ -175,12 +178,14 @@ def inicio():
 
 
 @app.route('/equipo')
+@auth.solo_admin
 def equipo():
     return render_template('index.html', servicios=listar_items(),
                            no_leidas=notificaciones.contar_no_leidas_seguro())
 
 
 @app.route('/api/servicios')
+@auth.solo_admin
 def api_servicios():
     # Endpoint (GET)
     return jsonify({"estado": "exito", "datos": listar_items()})
@@ -188,6 +193,7 @@ def api_servicios():
 
 # METODO POST
 @app.route('/api/servicios/<item_id>/reservar', methods=['POST'])
+@auth.solo_admin
 def reservar_servicio(item_id):
     # Reserva 1 cupo/unidad: descuenta su disponibilidad (de forma atómica en la BD)
     resuelto = _resolver_id(item_id)
@@ -212,6 +218,7 @@ def reservar_servicio(item_id):
 
 # METODO PUT
 @app.route('/api/servicios/<item_id>', methods=['PUT'])
+@auth.solo_admin
 def reemplazar_servicio(item_id):
     valores, error = _validar_cuerpo(request.get_json(silent=True))
     if error:
@@ -246,6 +253,7 @@ def reemplazar_servicio(item_id):
 
 # METODO DELETE
 @app.route('/api/servicios/<item_id>', methods=['DELETE'])
+@auth.solo_admin
 def eliminar_servicio(item_id):
     item = obtener_item(item_id)
     if item is None:
@@ -276,6 +284,7 @@ def eliminar_servicio(item_id):
 
 # ---------- Notificaciones (MongoDB) ----------
 @app.route('/api/notificaciones')
+@auth.solo_admin
 def api_notificaciones():
     # ?solo_no_leidas=true  &  ?limite=20 (máx. 100)
     solo_no_leidas = request.args.get('solo_no_leidas', '').lower() in ('1', 'true', 'si')
@@ -291,6 +300,7 @@ def api_notificaciones():
 
 
 @app.route('/api/notificaciones/<notif_id>/leer', methods=['PATCH'])
+@auth.solo_admin
 def leer_notificacion(notif_id):
     if not notificaciones.marcar_leida(notif_id):
         return jsonify({"estado": "error", "mensaje": "Notificación no encontrada"}), 404
@@ -298,6 +308,7 @@ def leer_notificacion(notif_id):
 
 
 @app.route('/api/notificaciones/leer-todas', methods=['PATCH'])
+@auth.solo_admin
 def leer_todas_notificaciones():
     marcadas = notificaciones.marcar_todas_leidas()
     return jsonify({"estado": "exito", "marcadas": marcadas, "no_leidas": 0})
@@ -305,4 +316,5 @@ def leer_todas_notificaciones():
 
 if __name__ == '__main__':
     # host='0.0.0.0' permite acceder desde otros dispositivos en tu red
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # El depurador solo se activa si lo pides: FLASK_DEBUG=1 (nunca en una red compartida)
+    app.run(debug=os.getenv('FLASK_DEBUG') == '1', host='0.0.0.0', port=5000)

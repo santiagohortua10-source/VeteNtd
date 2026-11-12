@@ -21,6 +21,8 @@ async function api(url, metodo = 'GET', cuerpo = null) {
             headers: cuerpo ? { 'Content-Type': 'application/json' } : {},
             body: cuerpo ? JSON.stringify(cuerpo) : undefined
         });
+        // Sesión vencida en el panel de administración: vuelve al ingreso
+        if (res.status === 401 && location.pathname === '/equipo') { location.href = '/cliente'; }
         const data = await res.json();
         return { ok: res.ok && data.estado === 'exito', status: res.status, data };
     } catch (err) {

@@ -2,11 +2,16 @@
 El token viaja en una cookie HttpOnly y lleva el id y el rol de quien inició sesión."""
 import os
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 
 import jwt  # PyJWT
-from flask import request
+from flask import jsonify, redirect, request
+from werkzeug.security import check_password_hash
+
+import db
 
 COOKIE = "access_token"
+CARGO_ADMIN = "Administrador"
 EXPIRA_MIN = int(os.getenv("JWT_EXP_MINUTOS", "60"))
 
 
@@ -60,3 +65,35 @@ def poner_cookie(respuesta, sujeto_id, rol="Cliente"):
 def borrar_cookie(respuesta):
     respuesta.delete_cookie(COOKIE)
     return respuesta
+
+
+def credenciales_admin(correo, clave):
+    """(ID_Empleado, nombre) si el correo y la contraseña son de un administrador; si no, None.
+    Los formularios de ingreso de clientes y de veterinarios la usan para dejar entrar también
+    al administrador (que siempre termina en su panel, /equipo)."""
+    fila = db.consultar(
+        "SELECT ID_Empleado, NombreEmpleado, ClaveHash FROM EMPLEADO "
+        "WHERE CorreoEmpleado = %s AND CargoEmpleado = %s", (correo, CARGO_ADMIN), uno=True)
+    if fila and fila["ClaveHash"] and check_password_hash(fila["ClaveHash"], clave):
+        return fila["ID_Empleado"], fila["NombreEmpleado"]
+    return None
+
+
+def admin_id_actual():
+    """ID_Empleado del administrador, o None si no hay sesión o la sesión es de otro rol."""
+    t = _datos_token()
+    return t[0] if t and t[1] == "Administrador" else None
+
+
+def solo_admin(vista):
+    """Protege el panel de administración: exige una sesión (JWT) con rol Administrador.
+    Sin sesión: las rutas /api/ responden 401 y las páginas redirigen al ingreso común (/cliente)."""
+    @wraps(vista)
+    def interior(*args, **kwargs):
+        if not admin_id_actual():
+            if request.path.startswith("/api/"):
+                return jsonify({"estado": "error",
+                                "mensaje": "Inicia sesión como administrador"}), 401
+            return redirect("/cliente")
+        return vista(*args, **kwargs)
+    return interior

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Veterinaria PawCare</title>
+    <title>Administración · PawCare</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
@@ -13,8 +13,7 @@
     <header class="barra">
         <a class="marca" href="/">🐾 PawCare</a>
         <nav aria-label="Principal">
-            <a href="/equipo" class="activo">Panel del equipo</a>
-            <a href="/cliente">Portal de clientes</a>
+            <a href="/equipo" class="activo">Administración</a>
         </nav>
         <!-- Notificaciones del equipo (MongoDB) -->
         <div class="campana-wrap">
@@ -29,11 +28,14 @@
                 <div id="lista-notif"><div class="panel-vacio">Cargando…</div></div>
             </div>
         </div>
+        <div class="barra-usuario">
+            <button class="btn btn-suave btn-chico" id="btn-salir">Salir</button>
+        </div>
     </header>
 
     <main class="contenedor">
-        <h1 class="titulo-pagina">Servicios y productos para tu mascota</h1>
-        <p class="subtitulo">¿Quieres una cita? Entra al <a href="/cliente" style="color: var(--verde);">portal de clientes</a> y agéndala con el veterinario que prefieras.</p>
+        <h1 class="titulo-pagina">Administración del catálogo</h1>
+        <p class="subtitulo">Edita, elimina o reserva los servicios y productos que ven los clientes.</p>
 
         <div class="filtros" role="group" aria-label="Filtrar catálogo">
             <button class="filtro" data-filtro="todos" aria-pressed="true">Todo</button>
@@ -106,6 +108,12 @@
         const overlay = document.getElementById('overlay');
         const refrescarNotificaciones = iniciarNotificaciones('/api/notificaciones');
         let cardEnEdicion = null;
+
+        // --- Cerrar sesión del administrador ---
+        document.getElementById('btn-salir').addEventListener('click', async function () {
+            await api('/api/admin/logout', 'POST');
+            location.href = '/cliente';
+        });
 
         // --- Filtro Todo / Servicios / Productos ---
         document.querySelectorAll('.filtro').forEach(function (btn) {

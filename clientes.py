@@ -188,6 +188,8 @@ def horas_disponibles(consulta, vet_id, duracion, fecha, mascota_id=None):
 def portal():
     if auth.veterinario_id_actual():
         return redirect("/veterinario")
+    if auth.admin_id_actual():
+        return redirect("/equipo")
     cid = auth.cliente_id_actual()
     cliente = _cliente_actual(cid) if cid else None
     hoy = ahora().date()
@@ -232,11 +234,11 @@ def registro():
                 "CorreoCliente, ClaveHash) VALUES (%s, %s, %s, %s, %s)",
                 (nombre, contacto, direccion, correo, clave_hash))
             cid = cur.lastrowid
-            # Mismo registro en USUARIOS (con el hash y la contraseña tal cual)
+            # Mismo registro en USUARIOS (solo con el hash, nunca la contraseña en texto plano)
             cur.execute(
-                "INSERT INTO USUARIOS (ID_Cliente, Nombre, Correo, ClaveHash, Clave, Rol) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (cid, nombre, correo, clave_hash, clave, "Cliente"))
+                "INSERT INTO USUARIOS (ID_Cliente, Nombre, Correo, ClaveHash, Rol) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (cid, nombre, correo, clave_hash, "Cliente"))
     except db.IntegrityError:
         return _error("Ya existe una cuenta con ese correo", 409)
 
@@ -250,9 +252,13 @@ def login():
     clave = str(d.get("clave", ""))
     fila = db.consultar("SELECT ID_Cliente, NombreCliente, ClaveHash FROM CLIENTE "
                         "WHERE CorreoCliente = %s", (correo,), uno=True)
-    if not fila or not fila["ClaveHash"] or not check_password_hash(fila["ClaveHash"], clave):
-        return _error("Correo o contraseña incorrectos", 401)
-    return auth.poner_cookie(_ok(datos={"nombre": fila["NombreCliente"]}), fila["ID_Cliente"])
+    if fila and fila["ClaveHash"] and check_password_hash(fila["ClaveHash"], clave):
+        return auth.poner_cookie(_ok(datos={"nombre": fila["NombreCliente"]}), fila["ID_Cliente"])
+    admin = auth.credenciales_admin(correo, clave)      # el administrador también puede entrar aquí
+    if admin:
+        return auth.poner_cookie(_ok(datos={"nombre": admin[1], "destino": "/equipo"}),
+                                 admin[0], auth.CARGO_ADMIN)
+    return _error("Correo o contraseña incorrectos", 401)
 
 
 @bp.post("/api/cliente/logout")

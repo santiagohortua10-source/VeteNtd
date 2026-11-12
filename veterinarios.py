@@ -27,6 +27,8 @@ def requiere_veterinario(vista):
 
 @bp.route("/veterinario")
 def portal():
+    if auth.admin_id_actual():
+        return redirect("/equipo")      # el administrador tiene su propio panel
     vid = auth.veterinario_id_actual()
     vet = db.consultar("SELECT ID_Empleado AS id, NombreEmpleado AS nombre "
                        "FROM EMPLEADO WHERE ID_Empleado = %s", (vid,), uno=True) if vid else None
@@ -44,10 +46,14 @@ def login():
     fila = db.consultar(
         "SELECT ID_Empleado, NombreEmpleado, ClaveHash FROM EMPLEADO "
         "WHERE CorreoEmpleado = %s AND CargoEmpleado LIKE %s", (correo, "Veterinari%"), uno=True)
-    if not fila or not fila["ClaveHash"] or not check_password_hash(fila["ClaveHash"], clave):
-        return _error("Correo o contraseña incorrectos", 401)
-    return auth.poner_cookie(_ok(datos={"nombre": fila["NombreEmpleado"]}),
-                             fila["ID_Empleado"], "Veterinario")
+    if fila and fila["ClaveHash"] and check_password_hash(fila["ClaveHash"], clave):
+        return auth.poner_cookie(_ok(datos={"nombre": fila["NombreEmpleado"]}),
+                                 fila["ID_Empleado"], "Veterinario")
+    admin = auth.credenciales_admin(correo, clave)      # el administrador también puede entrar aquí
+    if admin:
+        return auth.poner_cookie(_ok(datos={"nombre": admin[1], "destino": "/equipo"}),
+                                 admin[0], auth.CARGO_ADMIN)
+    return _error("Correo o contraseña incorrectos", 401)
 
 
 @bp.post("/api/veterinario/logout")

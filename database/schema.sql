@@ -1,22 +1,3 @@
--- =====================================================================
--- PawCare / VeteNtd - ESTRUCTURA COMPLETA de la base "veterinaria"
--- MySQL 8+ / MariaDB (XAMPP)
---
--- Contiene solo tablas, llaves e indices (sin datos).
--- Los datos estan en:  veterinaria_inserts_completos.sql  (ejecutar DESPUES de este).
---
--- Como usarlo:  phpMyAdmin -> pestana "Importar" -> elegir este archivo -> "Importar".
--- No hace falta crear la base antes.
---
--- AVISO: si las tablas ya existen, este script las BORRA y las vuelve a crear
--- (reinicia la base desde cero). No lo ejecutes si tienes datos que quieras conservar.
---
--- Refleja el estado final del proyecto:
---   schema.sql + ampliaciones de migracion_app.sql + tablas de la tienda (PEDIDOS / PEDIDO_DETALLE)
---   + columnas CorreoEmpleado y ClaveHash en EMPLEADO (login de veterinarios)
---   + HISTORIAL_CLINICO con FechaHora DATETIME y textos de 500 caracteres
---   + USUARIOS.ID_Empleado (enlace de usuario a empleado)
--- =====================================================================
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -260,3 +241,26 @@ CREATE TABLE PEDIDO_DETALLE (
 ) ENGINE=InnoDB;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+
+
+
+
+
+USE veterinaria;
+UPDATE USUARIOS SET Clave = NULL;
+ALTER TABLE USUARIOS DROP COLUMN Clave;
+
+
+
+-- Cuenta del administrador (entra por /admin y administra el catalogo en /equipo).
+-- phpMyAdmin -> pestana SQL (o Importar). Se puede ejecutar varias veces: no repite la cuenta.
+--   correo:      admin@pawcare.com
+--   contrasena:  Admin#PawCare2026   (de DEMOSTRACION: cambiala antes de entregar/publicar)
+USE veterinaria;
+
+INSERT INTO EMPLEADO (NombreEmpleado, ContactoEmpleado, CargoEmpleado, CorreoEmpleado, ClaveHash)
+SELECT 'Administrador PawCare', '3000000000', 'Administrador', 'admin@pawcare.com',
+       'scrypt:32768:8:1$wCV4kqJbq1PeUpE3$a342ad92b6890fff748622384b01ae5c72bc0a4ed60ac28a8e5574193b6cc46fb5c2390105721faec7b6bf297ed963d0ed2e085a262d7bce766566ae231f7f61'
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM EMPLEADO WHERE CorreoEmpleado = 'admin@pawcare.com');
