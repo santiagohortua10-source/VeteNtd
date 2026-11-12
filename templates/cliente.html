@@ -50,6 +50,7 @@
             <div class="pestanas" role="tablist">
                 <button class="pestana" role="tab" aria-selected="true" data-form="login">Ingresar</button>
                 <button class="pestana" role="tab" aria-selected="false" data-form="registro">Crear cuenta</button>
+                <button class="pestana" role="tab" aria-selected="false" data-form="vet">🩺 Soy veterinario</button>
             </div>
 
             <form class="caja" id="form-login">
@@ -83,32 +84,94 @@
                 </label>
                 <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Crear mi cuenta</button>
             </form>
+
+            <!-- ---- Veterinarios: ingreso y registro ---- -->
+            <div id="form-vet" hidden>
+                <form class="caja" id="form-vet-login">
+                    <label class="campo" style="margin-top:0">Correo
+                        <input type="email" name="correo" required autocomplete="email">
+                    </label>
+                    <label class="campo">Contraseña
+                        <input type="password" name="clave" required autocomplete="current-password">
+                    </label>
+                    <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Ingresar como veterinario</button>
+                </form>
+
+                <form class="caja" id="form-vet-registro" hidden>
+                    <label class="campo" style="margin-top:0">Nombre completo
+                        <input type="text" name="nombre" required maxlength="50" autocomplete="name">
+                    </label>
+                    <div class="grid-2">
+                        <label class="campo">Teléfono
+                            <input type="tel" name="contacto" required maxlength="20" autocomplete="tel">
+                        </label>
+                        <label class="campo">Cargo
+                            <select name="cargo" required>
+                                <option value="Veterinario">Veterinario</option>
+                                <option value="Veterinaria">Veterinaria</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="campo">Correo
+                        <input type="email" name="correo" required maxlength="100" autocomplete="email">
+                    </label>
+                    <label class="campo">Contraseña
+                        <input type="password" name="clave" required minlength="8" autocomplete="new-password">
+                        <span class="ayuda">Mínimo 8 caracteres.</span>
+                    </label>
+                    <label class="campo">Código de la clínica
+                        <input type="password" name="codigo" required autocomplete="off">
+                        <span class="ayuda">Te lo da el administrador de la clínica.</span>
+                    </label>
+                    <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Registrarme como veterinario</button>
+                </form>
+
+                <p style="text-align:center;margin-top:1rem">
+                    <button type="button" class="btn btn-suave btn-chico" id="alternar-vet">¿Primera vez? Registrarme como veterinario</button>
+                </p>
+            </div>
         </section>
 
         <script src="{{ url_for('static', filename='comun.js') }}"></script>
         <script>
-            // Cambiar entre "Ingresar" y "Crear cuenta"
+            // Cambiar entre "Ingresar", "Crear cuenta" y "Soy veterinario"
             document.querySelectorAll('.pestana').forEach(function (tab) {
                 tab.addEventListener('click', function () {
                     document.querySelectorAll('.pestana').forEach(t => t.setAttribute('aria-selected', t === tab));
-                    document.getElementById('form-login').hidden = tab.dataset.form !== 'login';
-                    document.getElementById('form-registro').hidden = tab.dataset.form !== 'registro';
+                    ['login', 'registro', 'vet'].forEach(function (n) {
+                        document.getElementById('form-' + n).hidden = tab.dataset.form !== n;
+                    });
                 });
             });
 
-            function enviar(formId, url) {
+            // Dentro de la pestaña de veterinario: alternar entre ingresar y registrarse
+            const alternar = document.getElementById('alternar-vet');
+            alternar.addEventListener('click', function () {
+                const verRegistro = document.getElementById('form-vet-registro').hidden;
+                document.getElementById('form-vet-registro').hidden = !verRegistro;
+                document.getElementById('form-vet-login').hidden = verRegistro;
+                alternar.textContent = verRegistro ? 'Ya tengo cuenta: ingresar' : '¿Primera vez? Registrarme como veterinario';
+            });
+
+            // `destino` es opcional: si se indica, se va a esa página en vez de recargar
+            function enviar(formId, url, destino) {
                 document.getElementById(formId).addEventListener('submit', async function (e) {
                     e.preventDefault();
                     const boton = e.target.querySelector('button[type="submit"]');
                     boton.disabled = true;
                     const r = await api(url, 'POST', Object.fromEntries(new FormData(e.target)));
-                    if (r.ok) { location.reload(); return; }
+                    if (r.ok) {
+                        if (destino) location.href = destino; else location.reload();
+                        return;
+                    }
                     aviso(r.data.mensaje, 'error');
                     boton.disabled = false;
                 });
             }
             enviar('form-login', '/api/cliente/login');
             enviar('form-registro', '/api/cliente/registro');
+            enviar('form-vet-login', '/api/veterinario/login', '/veterinario');
+            enviar('form-vet-registro', '/api/veterinario/registro', '/veterinario');
         </script>
 
 {% else %}
