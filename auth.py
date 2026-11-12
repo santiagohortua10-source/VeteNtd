@@ -1,4 +1,5 @@
-"""JWT del portal de clientes. El token viaja en una cookie HttpOnly."""
+"""JWT del portal de clientes y del portal de veterinarios.
+El token viaja en una cookie HttpOnly y lleva el id y el rol de quien inició sesión."""
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -16,28 +17,41 @@ def _clave():
     return clave
 
 
-def crear_token(cliente_id):
+def crear_token(sujeto_id, rol="Cliente"):
     ahora = datetime.now(timezone.utc)
     return jwt.encode(
-        {"sub": str(cliente_id), "iat": ahora, "exp": ahora + timedelta(minutes=EXPIRA_MIN)},
+        {"sub": str(sujeto_id), "rol": rol, "iat": ahora,
+         "exp": ahora + timedelta(minutes=EXPIRA_MIN)},
         _clave(), algorithm="HS256")
 
 
-def cliente_id_actual():
-    """Id del cliente según la cookie, o None si falta, es inválida o expiró."""
+def _datos_token():
+    """(id, rol) según la cookie, o None si falta, es inválida o expiró."""
     token = request.cookies.get(COOKIE)
     if not token:
         return None
     try:
         datos = jwt.decode(token, _clave(), algorithms=["HS256"],
                            options={"require": ["exp", "sub"]})
-        return int(datos["sub"])
+        return int(datos["sub"]), datos.get("rol", "Cliente")
     except (jwt.InvalidTokenError, ValueError):
         return None
 
 
-def poner_cookie(respuesta, cliente_id):
-    respuesta.set_cookie(COOKIE, crear_token(cliente_id), max_age=EXPIRA_MIN * 60,
+def cliente_id_actual():
+    """Id del cliente, o None si no hay sesión o la sesión es de otro rol."""
+    t = _datos_token()
+    return t[0] if t and t[1] == "Cliente" else None
+
+
+def veterinario_id_actual():
+    """ID_Empleado del veterinario, o None si no hay sesión o la sesión es de otro rol."""
+    t = _datos_token()
+    return t[0] if t and t[1] == "Veterinario" else None
+
+
+def poner_cookie(respuesta, sujeto_id, rol="Cliente"):
+    respuesta.set_cookie(COOKIE, crear_token(sujeto_id, rol), max_age=EXPIRA_MIN * 60,
                          httponly=True, samesite="Lax",
                          secure=os.getenv("COOKIE_SECURE", "0") == "1")
     return respuesta

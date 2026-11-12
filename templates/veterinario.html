@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal del veterinario · PawCare</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body data-vet="{{ 1 if vet else 0 }}">
+<header class="barra">
+    <a class="marca" href="/">🐾 PawCare</a>
+    <nav><a href="/veterinario" class="activo">Portal veterinario</a></nav>
+    {% if vet %}
+    <div class="barra-usuario">
+        <span>Hola, <strong>{{ vet.nombre }}</strong></span>
+        <button class="btn btn-suave btn-chico" id="btn-salir">Salir</button>
+    </div>
+    {% endif %}
+</header>
+
+<main class="contenedor">
+{% if not vet %}
+    <section class="card" style="max-width:420px;margin:2rem auto">
+        <h2>Ingreso de veterinarios</h2>
+        <label class="campo">Correo<input type="email" id="correo"></label>
+        <label class="campo">Contraseña<input type="password" id="clave"></label>
+        <button class="btn btn-primario btn-bloque" id="btn-entrar" style="margin-top:1rem">Ingresar</button>
+    </section>
+{% else %}
+    <h2>Mis citas</h2>
+    <div id="citas" style="overflow-x:auto"></div>
+
+    <h2 style="margin-top:2rem">Buscar mascota</h2>
+    <label class="campo">Nombre de la mascota o del dueño<input id="q" autocomplete="off"></label>
+    <div id="resultados" style="margin-top:.75rem"></div>
+
+    <section id="ficha" style="margin-top:2rem"></section>
+{% endif %}
+</main>
+
+<script src="{{ url_for('static', filename='comun.js') }}"></script>
+<script>
+const $ = id => document.getElementById(id);
+const logueado = document.body.dataset.vet === '1';
+
+function tabla(cabeceras, filas) {
+    const celda = c => el('td', { style: 'padding:.4rem .6rem' }, c instanceof Node ? c : String(c ?? ''));
+    return el('table', { style: 'width:100%;border-collapse:collapse' },
+        el('tr', {}, ...cabeceras.map(h => el('th', { style: 'text-align:left;padding:.4rem .6rem' }, h))),
+        ...filas.map(f => el('tr', {}, ...f.map(celda))));
+}
+
+const botonFicha = id => el('button', { class: 'btn btn-suave btn-chico', onclick: () => verFicha(id) }, 'Ver historial');
+
+async function cargarCitas() {
+    const r = await api('/api/veterinario/citas');
+    if (!r.ok) return aviso(r.data.mensaje, 'error');
+    const filas = r.data.datos;
+    $('citas').replaceChildren(filas.length
+        ? tabla(['Fecha', 'Hora', 'Mascota', 'Dueño', 'Teléfono', 'Servicio', 'Estado', ''],
+                filas.map(c => [c.fecha, c.hora, c.mascota, c.cliente, c.contacto, c.servicio,
+                                c.estado, botonFicha(c.mascota_id)]))
+        : el('p', {}, 'Aún no tienes citas.'));
+}
+
+async function buscar() {
+    const r = await api('/api/veterinario/mascotas?q=' + encodeURIComponent($('q').value));
+    if (!r.ok) return aviso(r.data.mensaje, 'error');
+    $('resultados').replaceChildren(tabla(['Mascota', 'Especie', 'Raza', 'Dueño', ''],
+        r.data.datos.map(m => [m.nombre, m.especie, m.raza, m.dueno, botonFicha(m.id)])));
+}
+
+async function verFicha(id) {
+    const r = await api(`/api/veterinario/mascotas/${id}/historial`);
+    if (!r.ok) return aviso(r.data.mensaje, 'error');
+    const { mascota: m, clinico, citas } = r.data.datos;
+    $('ficha').replaceChildren(
+        el('h2', {}, `${m.nombre} · ${m.especie} ${m.raza}`),
+        el('p', {}, `Dueño: ${m.dueno} (${m.contacto}) · Nació: ${m.nacimiento} · ${m.peso} kg · ${m.genero}`),
+        el('h3', { style: 'margin-top:1rem' }, 'Historial clínico'),
+        clinico.length
+            ? tabla(['Fecha', 'Diagnóstico', 'Tratamiento', 'Veterinario'],
+                    clinico.map(h => [h.fecha, h.diagnostico, h.tratamiento, h.veterinario]))
+            : el('p', {}, 'Sin registros clínicos.'),
+        el('h3', { style: 'margin-top:1rem' }, 'Historial de citas'),
+        citas.length
+            ? tabla(['Fecha', 'Hora', 'Servicio', 'Veterinario', 'Estado'],
+                    citas.map(c => [c.fecha, c.hora, c.servicio, c.veterinario, c.estado]))
+            : el('p', {}, 'Sin citas.'));
+    $('ficha').scrollIntoView({ behavior: 'smooth' });
+}
+
+if (!logueado) {
+    $('btn-entrar').onclick = async () => {
+        const r = await api('/api/veterinario/login', 'POST',
+                            { correo: $('correo').value, clave: $('clave').value });
+        if (r.ok) location.reload(); else aviso(r.data.mensaje, 'error');
+    };
+} else {
+    $('btn-salir').onclick = async () => { await api('/api/veterinario/logout', 'POST'); location.reload(); };
+    let temporizador;
+    $('q').oninput = () => { clearTimeout(temporizador); temporizador = setTimeout(buscar, 300); };
+    cargarCitas();
+    buscar();
+}
+</script>
+</body>
+</html>

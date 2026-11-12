@@ -10,7 +10,7 @@ import unicodedata
 from datetime import date, datetime, timedelta
 from functools import wraps
 
-from flask import Blueprint, jsonify, make_response, render_template, request
+from flask import Blueprint, jsonify, make_response, redirect, render_template, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import auth
@@ -186,6 +186,8 @@ def horas_disponibles(consulta, vet_id, duracion, fecha, mascota_id=None):
 # ---------- Página ----------
 @bp.route("/cliente")
 def portal():
+    if auth.veterinario_id_actual():
+        return redirect("/veterinario")
     cid = auth.cliente_id_actual()
     cliente = _cliente_actual(cid) if cid else None
     hoy = ahora().date()
