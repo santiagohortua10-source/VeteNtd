@@ -1,11 +1,12 @@
-"""Portal del veterinario: login, registro, citas propias e historial clínico de mascotas."""
-import hmac
-import os
-import re
+"""Portal del veterinario: ingreso, citas propias e historial clínico de mascotas.
+
+Las cuentas de veterinario viven en la tabla EMPLEADO (CorreoEmpleado y ClaveHash) y las crea el
+administrador con  python database/crear_veterinario.py  (no hay registro desde la página).
+"""
 from functools import wraps
 
 from flask import Blueprint, redirect, render_template, request
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 
 import auth
 import db
@@ -35,43 +36,19 @@ def portal():
     return render_template("veterinario.html", vet=vet)
 
 
-@bp.post("/api/veterinario/registro")
-def registro():
+@bp.post("/api/veterinario/login")
+def login():
     d = _cuerpo()
-    esperado = os.getenv("CODIGO_VETERINARIO", "")
-    recibido = str(d.get("codigo", ""))
-    if not esperado or not hmac.compare_digest(recibido.encode(), esperado.encode()):
-        return _error("Código de la clínica incorrecto", 403)
-
-    nombre = str(d.get("nombre", "")).strip()
-    contacto = str(d.get("contacto", "")).strip()
     correo = str(d.get("correo", "")).strip().lower()
     clave = str(d.get("clave", ""))
-    cargo = str(d.get("cargo", "")).strip()
+    fila = db.consultar(
+        "SELECT ID_Empleado, NombreEmpleado, ClaveHash FROM EMPLEADO "
+        "WHERE CorreoEmpleado = %s AND CargoEmpleado LIKE %s", (correo, "Veterinari%"), uno=True)
+    if not fila or not fila["ClaveHash"] or not check_password_hash(fila["ClaveHash"], clave):
+        return _error("Correo o contraseña incorrectos", 401)
+    return auth.poner_cookie(_ok(datos={"nombre": fila["NombreEmpleado"]}),
+                             fila["ID_Empleado"], "Veterinario")
 
-    if not 2 <= len(nombre) <= 50:
-        return _error("El nombre debe tener entre 2 y 50 caracteres")
-    if not 1 <= len(contacto) <= 20:
-        return _error("El teléfono es obligatorio (máx. 20 caracteres)")
-    if len(correo) > 100 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", correo):
-        return _error("Correo no válido")
-    if len(clave) < 8:
-        return _error("La contraseña debe tener al menos 8 caracteres")
-    if cargo not in ("Veterinario", "Veterinaria"):
-        return _error("Elige un cargo válido")
-
-    try:
-        with db.transaccion() as cur:
-            cur.execute("INSERT INTO EMPLEADO (NombreEmpleado, ContactoEmpleado, CargoEmpleado) "
-                        "VALUES (%s, %s, %s)", (nombre, contacto, cargo))
-            eid = cur.lastrowid
-            cur.execute("INSERT INTO USUARIOS (ID_Empleado, Nombre, Correo, ClaveHash, Rol) "
-                        "VALUES (%s, %s, %s, %s, 'Veterinario')",
-                        (eid, nombre, correo, generate_password_hash(clave)))
-    except db.IntegrityError:
-        return _error("Ya existe una cuenta con ese correo", 409)
-
-    return auth.poner_cookie(_ok(datos={"nombre": nombre}), eid, "Veterinario")
 
 @bp.post("/api/veterinario/logout")
 def logout():

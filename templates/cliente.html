@@ -85,7 +85,7 @@
                 <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Crear mi cuenta</button>
             </form>
 
-            <!-- ---- Veterinarios: ingreso y registro ---- -->
+            <!-- ---- Veterinarios: solo ingreso (las cuentas las crea la clínica) ---- -->
             <div id="form-vet" hidden>
                 <form class="caja" id="form-vet-login">
                     <label class="campo" style="margin-top:0">Correo
@@ -97,38 +97,7 @@
                     <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Ingresar como veterinario</button>
                 </form>
 
-                <form class="caja" id="form-vet-registro" hidden>
-                    <label class="campo" style="margin-top:0">Nombre completo
-                        <input type="text" name="nombre" required maxlength="50" autocomplete="name">
-                    </label>
-                    <div class="grid-2">
-                        <label class="campo">Teléfono
-                            <input type="tel" name="contacto" required maxlength="20" autocomplete="tel">
-                        </label>
-                        <label class="campo">Cargo
-                            <select name="cargo" required>
-                                <option value="Veterinario">Veterinario</option>
-                                <option value="Veterinaria">Veterinaria</option>
-                            </select>
-                        </label>
-                    </div>
-                    <label class="campo">Correo
-                        <input type="email" name="correo" required maxlength="100" autocomplete="email">
-                    </label>
-                    <label class="campo">Contraseña
-                        <input type="password" name="clave" required minlength="8" autocomplete="new-password">
-                        <span class="ayuda">Mínimo 8 caracteres.</span>
-                    </label>
-                    <label class="campo">Código de la clínica
-                        <input type="password" name="codigo" required autocomplete="off">
-                        <span class="ayuda">Te lo da el administrador de la clínica.</span>
-                    </label>
-                    <button class="btn btn-primario btn-bloque" type="submit" style="margin-top:1.25rem">Registrarme como veterinario</button>
-                </form>
-
-                <p style="text-align:center;margin-top:1rem">
-                    <button type="button" class="btn btn-suave btn-chico" id="alternar-vet">¿Primera vez? Registrarme como veterinario</button>
-                </p>
+                <p class="ayuda" style="text-align:center;margin-top:1rem">Las cuentas de veterinario las crea el administrador de la clínica.</p>
             </div>
         </section>
 
@@ -142,15 +111,6 @@
                         document.getElementById('form-' + n).hidden = tab.dataset.form !== n;
                     });
                 });
-            });
-
-            // Dentro de la pestaña de veterinario: alternar entre ingresar y registrarse
-            const alternar = document.getElementById('alternar-vet');
-            alternar.addEventListener('click', function () {
-                const verRegistro = document.getElementById('form-vet-registro').hidden;
-                document.getElementById('form-vet-registro').hidden = !verRegistro;
-                document.getElementById('form-vet-login').hidden = verRegistro;
-                alternar.textContent = verRegistro ? 'Ya tengo cuenta: ingresar' : '¿Primera vez? Registrarme como veterinario';
             });
 
             // `destino` es opcional: si se indica, se va a esa página en vez de recargar
@@ -171,7 +131,6 @@
             enviar('form-login', '/api/cliente/login');
             enviar('form-registro', '/api/cliente/registro');
             enviar('form-vet-login', '/api/veterinario/login', '/veterinario');
-            enviar('form-vet-registro', '/api/veterinario/registro', '/veterinario');
         </script>
 
 {% else %}
