@@ -259,8 +259,8 @@ ALTER TABLE USUARIOS DROP COLUMN Clave;
 --   contrasena:  Admin#PawCare2026   (de DEMOSTRACION: cambiala antes de entregar/publicar)
 USE veterinaria;
 
-INSERT INTO EMPLEADO (NombreEmpleado, ContactoEmpleado, CargoEmpleado, CorreoEmpleado, ClaveHash)
-SELECT 'Administrador PawCare', '3000000000', 'Administrador', 'admin@pawcare.com',
-       'scrypt:32768:8:1$wCV4kqJbq1PeUpE3$a342ad92b6890fff748622384b01ae5c72bc0a4ed60ac28a8e5574193b6cc46fb5c2390105721faec7b6bf297ed963d0ed2e085a262d7bce766566ae231f7f61'
+INSERT INTO EMPLEADO (ID_Empleado, NombreEmpleado, ContactoEmpleado, CargoEmpleado, CorreoEmpleado, ClaveHash)
+SELECT 100, 'Administrador PawCare', '3000000000', 'Administrador', 'admin@pawcare.com',
+       '...el mismo hash...'
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM EMPLEADO WHERE CorreoEmpleado = 'admin@pawcare.com');
