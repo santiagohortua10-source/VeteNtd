@@ -34,9 +34,14 @@
     </header>
 
     <main class="contenedor">
+                <div class="pestanas" role="tablist" aria-label="Secciones de administración">
+            <button class="pestana" id="pestana-catalogo" role="tab" aria-selected="true">🛍️ Catálogo</button>
+            <button class="pestana" id="pestana-vets" role="tab" aria-selected="false">🩺 Veterinarios</button>
+        </div>
+
+        <section id="vista-catalogo">
         <h1 class="titulo-pagina">Administración del catálogo</h1>
         <p class="subtitulo">Edita, elimina o reserva los servicios y productos que ven los clientes.</p>
-
         <div class="filtros" role="group" aria-label="Filtrar catálogo">
             <button class="filtro" data-filtro="todos" aria-pressed="true">Todo</button>
             <button class="filtro" data-filtro="S" aria-pressed="false">Servicios</button>
@@ -73,6 +78,28 @@
             </article>
             {% endfor %}
         </div>
+                </section>
+
+        <!-- Veterinarios: ver, editar y eliminar -->
+        <section id="vista-vets" hidden>
+            <h1 class="titulo-pagina">Veterinarios</h1>
+            <p class="subtitulo">Consulta, edita o elimina al equipo veterinario de la clínica.</p>
+            <div class="tabla-wrap">
+                <table class="tabla-vets">
+                    <thead>
+                        <tr>
+                            <th>Veterinario</th>
+                            <th>Contacto</th>
+                            <th>Días de atención</th>
+                            <th>Citas</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vets-cuerpo"></tbody>
+                </table>
+            </div>
+            <p class="vacio" id="vets-vacio" hidden>No hay veterinarios registrados.</p>
+        </section>
     </main>
 
     <!-- Ventana de edición -->
@@ -102,7 +129,37 @@
             </div>
         </div>
     </div>
-
+    <!-- Ventana de edición de veterinarios -->
+    <div class="overlay" id="overlay-vet">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="vet-titulo">
+            <h2 id="vet-titulo">Editar veterinario</h2>
+            <label class="campo">Nombre
+                <input type="text" id="vet-nombre" maxlength="50">
+            </label>
+            <div class="grid-2">
+                <label class="campo">Cargo
+                    <select id="vet-cargo">
+                        <option value="Veterinario">Veterinario</option>
+                        <option value="Veterinaria">Veterinaria</option>
+                    </select>
+                </label>
+                <label class="campo">Teléfono
+                    <input type="text" id="vet-contacto" maxlength="20" inputmode="tel">
+                </label>
+            </div>
+            <label class="campo">Correo (es su usuario para ingresar)
+                <input type="email" id="vet-correo" maxlength="100">
+            </label>
+            <label class="campo">Nueva contraseña (opcional)
+                <input type="password" id="vet-clave" autocomplete="new-password" placeholder="Déjala vacía para no cambiarla">
+            </label>
+            <div class="horario-lectura" id="vet-horarios"></div>
+            <div class="modal-botones">
+                <button class="btn btn-suave" id="btn-cancelar-vet">Cancelar</button>
+                <button class="btn btn-primario" id="btn-guardar-vet">Guardar cambios</button>
+            </div>
+        </div>
+    </div>
     <script src="{{ url_for('static', filename='comun.js') }}"></script>
     <script>
         const overlay = document.getElementById('overlay');
@@ -207,6 +264,94 @@
                 refrescarNotificaciones();
             });
         });
+                // ================= Veterinarios (ver, editar, eliminar) =================
+        const overlayVet = document.getElementById('overlay-vet');
+        let vetEnEdicion = null;
+
+        // --- Pestañas Catálogo / Veterinarios ---
+        function mostrarVista(vista) {
+            const esVets = vista === 'vets';
+            document.getElementById('vista-catalogo').hidden = esVets;
+            document.getElementById('vista-vets').hidden = !esVets;
+            document.getElementById('pestana-catalogo').setAttribute('aria-selected', !esVets);
+            document.getElementById('pestana-vets').setAttribute('aria-selected', esVets);
+            history.replaceState(null, '', esVets ? '#veterinarios' : '#catalogo');
+            if (esVets) cargarVets();
+        }
+        document.getElementById('pestana-catalogo').addEventListener('click', () => mostrarVista('catalogo'));
+        document.getElementById('pestana-vets').addEventListener('click', () => mostrarVista('vets'));
+        if (location.hash === '#veterinarios') mostrarVista('vets');
+
+        // --- Ver: tabla de veterinarios ---
+        async function cargarVets() {
+            const r = await api('/api/admin/veterinarios');
+            if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+            const cuerpo = document.getElementById('vets-cuerpo');
+            cuerpo.replaceChildren(...r.data.datos.map(filaVet));
+            document.getElementById('vets-vacio').hidden = r.data.datos.length > 0;
+        }
+
+        function filaVet(v) {
+            return el('tr', { 'data-id': v.id },
+                el('td', null,
+                    el('strong', null, v.nombre),
+                    el('div', { class: 'sub' }, v.cargo),
+                    v.tiene_clave ? null : el('span', { class: 'insignia-aviso' }, 'Sin contraseña: no puede ingresar')),
+                el('td', null,
+                    el('div', null, v.correo || '—'),
+                    el('div', { class: 'sub' }, v.contacto)),
+                el('td', null, v.dias.length ? v.dias.join(', ') : 'Sin horarios'),
+                el('td', null, String(v.citas)),
+                el('td', null,
+                    el('div', { class: 'acciones-fila' },
+                        el('button', { class: 'btn btn-info btn-chico', onclick: () => abrirEdicionVet(v) }, '✏️ Editar'),
+                        el('button', { class: 'btn btn-peligro btn-chico', onclick: () => eliminarVet(v) }, '🗑️ Eliminar'))));
+        }
+
+        // --- Editar ---
+        function abrirEdicionVet(v) {
+            vetEnEdicion = v;
+            document.getElementById('vet-nombre').value = v.nombre;
+            document.getElementById('vet-cargo').value = v.cargo;
+            document.getElementById('vet-contacto').value = v.contacto;
+            document.getElementById('vet-correo').value = v.correo || '';
+            document.getElementById('vet-clave').value = '';
+            document.getElementById('vet-horarios').replaceChildren(
+                el('strong', null, 'Horario de atención'),
+                ...(v.horarios.length ? v.horarios.map(h => el('div', null, h)) : [el('div', null, 'Sin horarios registrados')]));
+            overlayVet.classList.add('activo');
+            document.getElementById('vet-nombre').focus();
+        }
+
+        function cerrarModalVet() { overlayVet.classList.remove('activo'); vetEnEdicion = null; }
+        document.getElementById('btn-cancelar-vet').addEventListener('click', cerrarModalVet);
+        overlayVet.addEventListener('click', function (e) { if (e.target === overlayVet) cerrarModalVet(); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') cerrarModalVet(); });
+
+        document.getElementById('btn-guardar-vet').addEventListener('click', async function () {
+            if (!vetEnEdicion) return;
+            const r = await api(`/api/admin/veterinarios/${vetEnEdicion.id}`, 'PUT', {
+                nombre: document.getElementById('vet-nombre').value,
+                cargo: document.getElementById('vet-cargo').value,
+                contacto: document.getElementById('vet-contacto').value,
+                correo: document.getElementById('vet-correo').value,
+                clave: document.getElementById('vet-clave').value
+            });
+            if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+            cerrarModalVet();
+            aviso('Veterinario actualizado.');
+            cargarVets();
+        });
+
+        // --- Eliminar ---
+        async function eliminarVet(v) {
+            if (!confirm(`¿Eliminar a ${v.nombre}? Esta acción no se puede deshacer.`)) return;
+            const r = await api(`/api/admin/veterinarios/${v.id}`, 'DELETE');
+            if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+            aviso('Veterinario eliminado.');
+            cargarVets();
+        }
     </script>
+
 </body>
 </html>

@@ -267,3 +267,30 @@ p { margin: 0; }
 .lc-quitar:hover { color: var(--rojo); background: var(--panel-2); }
 .resumen .ayuda { text-align: center; margin-top: .7rem; }
 .total-compra { color: var(--verde); font-size: 1.2rem; }
+/* ---------- Pestañas del panel y tabla de veterinarios ---------- */
+.pestanas { display: flex; gap: .5rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--borde); }
+.pestana {
+    background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -1px;
+    color: var(--suave); font: inherit; font-weight: 800; padding: .6rem 1rem; cursor: pointer;
+}
+.pestana:hover { color: var(--texto); }
+.pestana[aria-selected="true"] { color: var(--verde); border-bottom-color: var(--verde); }
+
+.tabla-wrap { margin-top: 1.25rem; background: var(--panel); border: 1px solid var(--borde); border-radius: 16px; overflow-x: auto; }
+.tabla-vets { width: 100%; min-width: 720px; border-collapse: collapse; }
+.tabla-vets th {
+    text-align: left; padding: .8rem 1rem; font-size: .78rem; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--suave); border-bottom: 1px solid var(--borde);
+}
+.tabla-vets td { padding: .85rem 1rem; border-bottom: 1px solid var(--borde); vertical-align: top; }
+.tabla-vets tbody tr:last-child td { border-bottom: none; }
+.tabla-vets .sub { color: var(--suave); font-size: .85rem; }
+.tabla-vets .acciones-fila { display: flex; gap: .4rem; flex-wrap: wrap; }
+.insignia-aviso {
+    display: inline-block; margin-top: .3rem; padding: .1rem .55rem; border-radius: 999px;
+    background: rgba(242, 200, 121, .15); color: var(--arena); font-size: .75rem; font-weight: 800;
+}
+.vacio { color: var(--suave); padding: 2rem 0; text-align: center; }
+.horario-lectura { margin-top: .9rem; font-size: .85rem; color: var(--suave); }
+.horario-lectura strong { display: block; margin-bottom: .2rem; }
+.horario-lectura div { padding-left: .5rem; }
