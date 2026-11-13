@@ -5,18 +5,20 @@ Aplicación web hecha con Flask para que los clientes de una veterinaria creen s
 ## Contenido
  
 1. [Qué hace el proyecto](#qué-hace-el-proyecto)
-2. [Capturas de pantalla](#capturas-de-pantalla)
-3. [Tecnologías](#tecnologías)
-4. [Estructura del proyecto](#estructura-del-proyecto)
-5. [Cómo funciona](#cómo-funciona)
-6. [Requisitos previos](#requisitos-previos)
-7. [Instalación y ejecución](#instalación-y-ejecución)
-8. [Uso diario](#uso-diario)
-9. [Variables de entorno](#variables-de-entorno)
-10. [Referencia de la API](#referencia-de-la-api)
-11. [Cómo probar la API con Postman](#cómo-probar-la-api-con-postman)
-12. [Solución de problemas](#solución-de-problemas)
-13. [Notas de seguridad](#notas-de-seguridad)
+2. [Video del flujo de la aplicación](#video-del-flujo-de-la-aplicación)
+3. [Capturas de pantalla](#capturas-de-pantalla)
+4. [Tecnologías](#tecnologías)
+5. [Estructura del proyecto](#estructura-del-proyecto)
+6. [Cómo funciona](#cómo-funciona)
+7. [Requisitos previos](#requisitos-previos)
+8. [Instalación y ejecución](#instalación-y-ejecución)
+9. [Uso diario](#uso-diario)
+10. [Variables de entorno](#variables-de-entorno)
+11. [Referencia de la API](#referencia-de-la-api)
+12. [Cómo probar la API con Postman](#cómo-probar-la-api-con-postman)
+13. [Solución de problemas](#solución-de-problemas)
+14. [Notas de seguridad](#notas-de-seguridad)
+
 ## Qué hace el proyecto
  
 El flujo es: primero la persona **crea su cuenta o inicia sesión** y, una vez dentro, el sistema la lleva al portal que corresponde a su rol. Al abrir `http://localhost:5000` el sitio lleva siempre al ingreso.
@@ -39,6 +41,12 @@ El flujo es: primero la persona **crea su cuenta o inicia sesión** y, una vez d
 - Muestra servicios y productos en una sola lista, con filtros por tipo.
 - Permite reservar (descuenta un cupo o una unidad), editar y eliminar elementos del catálogo.
 - Incluye una campana de notificaciones para el equipo de la clínica (citas, compras y alertas de stock).
+## Video del flujo de la aplicación
+
+Recorrido completo de la aplicación, desde el ingreso hasta el uso de cada portal:
+
+[▶ Ver el video en YouTube](https://youtu.be/TEmsM_ZJquc)
+
 ## Capturas de pantalla
  
 ### Agendar una cita
