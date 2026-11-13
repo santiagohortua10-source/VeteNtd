@@ -82,8 +82,11 @@
 
         <!-- Veterinarios: ver, editar y eliminar -->
         <section id="vista-vets" hidden>
-            <h1 class="titulo-pagina">Veterinarios</h1>
-            <p class="subtitulo">Consulta, edita o elimina al equipo veterinario de la clínica.</p>
+                        <h1 class="titulo-pagina">Veterinarios</h1>
+            <p class="subtitulo">Agrega, consulta, edita o elimina al equipo veterinario de la clínica.</p>
+            <div style="margin: 1rem 0;">
+                <button class="btn btn-primario" id="btn-agregar-vet">➕ Agregar veterinario</button>
+            </div>
             <div class="tabla-wrap">
                 <table class="tabla-vets">
                     <thead>
@@ -150,10 +153,26 @@
             <label class="campo">Correo (es su usuario para ingresar)
                 <input type="email" id="vet-correo" maxlength="100">
             </label>
-            <label class="campo">Nueva contraseña (opcional)
+                <label class="campo"><span id="vet-clave-etiqueta">Nueva contraseña (opcional)</span>
                 <input type="password" id="vet-clave" autocomplete="new-password" placeholder="Déjala vacía para no cambiarla">
             </label>
-            <div class="horario-lectura" id="vet-horarios"></div>
+                        <div class="horario-lectura" id="vet-horarios"></div>
+            <div id="vet-horarios-editor" hidden>
+                <p class="campo" style="margin-bottom:.3rem">Horario de atención (opcional)</p>
+                <div id="vet-bloques"></div>
+                <button type="button" class="btn btn-suave btn-chico" id="btn-agregar-bloque" style="margin-top:.6rem">➕ Agregar horario</button>
+                <p class="ayuda">Un mismo día puede tener varios horarios (por ejemplo, mañana y tarde).</p>
+            </div>
+            <style>
+                #overlay-vet .modal { max-width: 520px; }
+                .bloque-horario { display: grid; grid-template-columns: 1.5fr 1fr 1fr auto; gap: .5rem; align-items: center; margin-top: .5rem; }
+                .bloque-horario select, .bloque-horario input {
+                    width: 100%; padding: .55rem .6rem; border-radius: 10px; font: inherit;
+                    border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); color-scheme: dark;
+                }
+                .bloque-horario select:focus, .bloque-horario input:focus { border-color: var(--verde); outline: none; }
+                @media (max-width: 520px) { .bloque-horario { grid-template-columns: 1fr 1fr auto; } .bloque-horario select { grid-column: 1 / -1; } }
+            </style>
             <div class="modal-botones">
                 <button class="btn btn-suave" id="btn-cancelar-vet">Cancelar</button>
                 <button class="btn btn-primario" id="btn-guardar-vet">Guardar cambios</button>
@@ -264,9 +283,10 @@
                 refrescarNotificaciones();
             });
         });
-                // ================= Veterinarios (ver, editar, eliminar) =================
+                        // ================= Veterinarios (ver, agregar, editar, eliminar) =================
         const overlayVet = document.getElementById('overlay-vet');
         let vetEnEdicion = null;
+        let vetNuevo = false;
 
         // --- Pestañas Catálogo / Veterinarios ---
         function mostrarVista(vista) {
@@ -308,8 +328,59 @@
                         el('button', { class: 'btn btn-peligro btn-chico', onclick: () => eliminarVet(v) }, '🗑️ Eliminar'))));
         }
 
+        // --- Agregar ---
+        function configurarModalVet(creando) {
+            vetNuevo = creando;
+            document.getElementById('vet-titulo').textContent = creando ? 'Agregar veterinario' : 'Editar veterinario';
+            document.getElementById('btn-guardar-vet').textContent = creando ? 'Crear veterinario' : 'Guardar cambios';
+            document.getElementById('vet-clave-etiqueta').textContent =
+                creando ? 'Contraseña (mínimo 8 caracteres)' : 'Nueva contraseña (opcional)';
+            document.getElementById('vet-clave').placeholder =
+                creando ? 'Mínimo 8 caracteres' : 'Déjala vacía para no cambiarla';
+                        document.getElementById('vet-clave').required = creando;
+            document.getElementById('vet-horarios-editor').hidden = !creando;   // al crear se editan; al editar solo se ven
+            document.getElementById('vet-horarios').hidden = creando;
+        }
+
+        // --- Editor de horarios (solo al crear) ---
+        const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+        function agregarBloque(dia = 'Lunes', inicio = '08:00', fin = '12:00') {
+            const select = el('select', { 'aria-label': 'Día' },
+                ...DIAS_SEMANA.map(d => el('option', { value: d }, d)));
+            select.value = dia;
+            const fila = el('div', { class: 'bloque-horario' },
+                select,
+                el('input', { type: 'time', value: inicio, 'aria-label': 'Hora de inicio' }),
+                el('input', { type: 'time', value: fin, 'aria-label': 'Hora de fin' }),
+                el('button', { type: 'button', class: 'btn btn-peligro btn-chico', title: 'Quitar',
+                               onclick: () => fila.remove() }, '✕'));
+            document.getElementById('vet-bloques').appendChild(fila);
+        }
+
+        function leerBloques() {
+            return [...document.querySelectorAll('#vet-bloques .bloque-horario')].map(f => {
+                const [dia, ini, fin] = f.querySelectorAll('select, input');
+                return { dia: dia.value, inicio: ini.value, fin: fin.value };
+            });
+        }
+
+        document.getElementById('btn-agregar-bloque').addEventListener('click', () => agregarBloque());
+
+        document.getElementById('btn-agregar-vet').addEventListener('click', function () {
+            vetEnEdicion = null;
+            configurarModalVet(true);
+            ['vet-nombre', 'vet-contacto', 'vet-correo', 'vet-clave'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('vet-cargo').value = 'Veterinario';
+                        document.getElementById('vet-bloques').replaceChildren();
+            agregarBloque();                         // empieza con una fila lista para completar
+            overlayVet.classList.add('activo');
+            document.getElementById('vet-nombre').focus();
+        });
+
         // --- Editar ---
         function abrirEdicionVet(v) {
+            configurarModalVet(false);
             vetEnEdicion = v;
             document.getElementById('vet-nombre').value = v.nombre;
             document.getElementById('vet-cargo').value = v.cargo;
@@ -323,23 +394,29 @@
             document.getElementById('vet-nombre').focus();
         }
 
-        function cerrarModalVet() { overlayVet.classList.remove('activo'); vetEnEdicion = null; }
+        function cerrarModalVet() { overlayVet.classList.remove('activo'); vetEnEdicion = null; vetNuevo = false; }
         document.getElementById('btn-cancelar-vet').addEventListener('click', cerrarModalVet);
         overlayVet.addEventListener('click', function (e) { if (e.target === overlayVet) cerrarModalVet(); });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') cerrarModalVet(); });
 
+        // --- Guardar (crear o editar) ---
         document.getElementById('btn-guardar-vet').addEventListener('click', async function () {
-            if (!vetEnEdicion) return;
-            const r = await api(`/api/admin/veterinarios/${vetEnEdicion.id}`, 'PUT', {
+            if (!vetNuevo && !vetEnEdicion) return;
+            const cuerpo = {
                 nombre: document.getElementById('vet-nombre').value,
                 cargo: document.getElementById('vet-cargo').value,
                 contacto: document.getElementById('vet-contacto').value,
                 correo: document.getElementById('vet-correo').value,
                 clave: document.getElementById('vet-clave').value
-            });
+            };
+                        if (vetNuevo) cuerpo.horarios = leerBloques();
+            const r = vetNuevo
+                ? await api('/api/admin/veterinarios', 'POST', cuerpo)
+                : await api(`/api/admin/veterinarios/${vetEnEdicion.id}`, 'PUT', cuerpo);
             if (!r.ok) { aviso(r.data.mensaje, 'error'); return; }
+            const creado = vetNuevo;
             cerrarModalVet();
-            aviso('Veterinario actualizado.');
+            aviso(creado ? 'Veterinario creado.' : 'Veterinario actualizado.');
             cargarVets();
         });
 

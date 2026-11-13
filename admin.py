@@ -5,7 +5,7 @@ de veterinarios (ver auth.credenciales_admin) y siempre termina en su panel (/eq
 vive en EMPLEADO con CargoEmpleado = 'Administrador'; se crea con  python database/crear_administrador.py
 o con database/administrador.sql.
 
-Gestión de veterinarios (solo rol Administrador): ver, editar y eliminar. Solo se tocan filas de
+Gestión de veterinarios (solo rol Administrador): ver, agregar, editar y eliminar. Solo se tocan filas de
 EMPLEADO cuyo cargo es 'Veterinario' o 'Veterinaria'; las cuentas de administrador quedan fuera.
 """
 import re
@@ -71,8 +71,9 @@ def _veterinario(vid):
     return _con_horarios(vets)[0] if vets else None
 
 
-def _validar_veterinario(d):
-    """(valores, None) si es válido, o (None, mensaje). La contraseña es opcional: si viene, se cambia."""
+def _validar_veterinario(d, clave_obligatoria=False):
+    """(valores, None) si es válido, o (None, mensaje).
+    Al editar la contraseña es opcional (si viene, se cambia); al crear es obligatoria."""
     nombre = str(d.get("nombre", "")).strip()
     contacto = str(d.get("contacto", "")).strip()
     correo = str(d.get("correo", "")).strip().lower()
@@ -86,16 +87,75 @@ def _validar_veterinario(d):
         return None, "Escribe un correo válido"
     if cargo not in CARGOS_VET:
         return None, "El cargo debe ser Veterinario o Veterinaria"
+    if clave_obligatoria and not clave:
+        return None, "La contraseña es obligatoria"
     if clave and len(clave) < 8:
-        return None, "La nueva contraseña debe tener al menos 8 caracteres"
+        return None, "La contraseña debe tener al menos 8 caracteres"
     return {"nombre": nombre, "contacto": contacto, "correo": correo, "cargo": cargo, "clave": clave}, None
 
+HORA_RE = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
+
+def _validar_horarios(lista):
+    """([(dia, inicio, fin), ...], None) si es válido, o (None, mensaje). Es opcional: sin horarios, lista vacía.
+    Un mismo día puede tener varios bloques (mañana y tarde), pero no pueden cruzarse entre sí."""
+    if lista in (None, ""):
+        return [], None
+    if not isinstance(lista, list) or len(lista) > 28:
+        return None, "Los horarios no son válidos"
+    bloques, por_dia = [], {}
+    for h in lista:
+        if not isinstance(h, dict):
+            return None, "Los horarios no son válidos"
+        dia = str(h.get("dia", "")).strip()
+        ini = str(h.get("inicio", "")).strip()
+        fin = str(h.get("fin", "")).strip()
+        if dia not in DIAS:
+            return None, "Elige un día de la semana válido en cada horario"
+        if not HORA_RE.fullmatch(ini) or not HORA_RE.fullmatch(fin):
+            return None, f"Completa la hora de inicio y de fin del {dia}"
+        if ini >= fin:                               # 'HH:MM' con ceros: la comparación de texto es válida
+            return None, f"En el {dia}, la hora de inicio debe ser anterior a la de fin"
+        por_dia.setdefault(dia, []).append((ini, fin))
+        bloques.append((dia, ini + ":00", fin + ":00"))
+    for dia, rangos in por_dia.items():
+        rangos.sort()
+        for (_, fin_a), (ini_b, _) in zip(rangos, rangos[1:]):
+            if ini_b < fin_a:
+                return None, f"Los horarios del {dia} se cruzan entre sí"
+    return bloques, None
 @bp.get("/api/admin/veterinarios")
 @auth.solo_admin
 def listar_veterinarios():
     vets = db.consultar(SELECT_VET + " ORDER BY e.NombreEmpleado", ("Veterinari%",))
     return _ok(datos=_con_horarios(vets))
+
+
+@bp.post("/api/admin/veterinarios")
+@auth.solo_admin
+def crear_veterinario():
+    """Da de alta a un veterinario. Solo el administrador puede hacerlo: no existe registro público
+    y el cargo se valida en el servidor (nunca se puede crear otro administrador desde aquí)."""
+    d = _cuerpo()
+    v, error = _validar_veterinario(d, clave_obligatoria=True)
+    if error:
+        return _error(error, 400)
+    horarios, error = _validar_horarios(d.get("horarios"))
+    if error:
+        return _error(error, 400)
+    try:
+        with db.transaccion() as cur:                # el veterinario y sus horarios se guardan juntos, o nada
+            cur.execute(
+                "INSERT INTO EMPLEADO (NombreEmpleado, ContactoEmpleado, CargoEmpleado, CorreoEmpleado, ClaveHash) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (v["nombre"], v["contacto"], v["cargo"], v["correo"], generate_password_hash(v["clave"])))
+            nuevo_id = cur.lastrowid
+            for dia, ini, fin in horarios:
+                cur.execute("INSERT INTO HORARIO (ID_Empleado, DiaSemana, HoraInicio, HoraFin) "
+                            "VALUES (%s, %s, %s, %s)", (nuevo_id, dia, ini, fin))
+    except db.IntegrityError:                        # CorreoEmpleado es UNIQUE
+        return _error("Ese correo ya lo usa otro empleado", 409)
+    return _ok(mensaje="Veterinario creado correctamente", datos=_veterinario(nuevo_id)), 201
 
 
 @bp.put("/api/admin/veterinarios/<int:vid>")

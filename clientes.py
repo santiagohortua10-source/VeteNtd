@@ -8,6 +8,7 @@ import os
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from functools import wraps
 
 from flask import Blueprint, jsonify, make_response, redirect, render_template, request
@@ -338,6 +339,40 @@ def eliminar_mascota(cid, mascota_id):
     return _ok()
 
 
+# ---------- Facturación (FACTURACION + DETALLE_FACTURA + PAGO) ----------
+# Los precios del catálogo ya incluyen IVA: el total que ve el cliente es el que se factura y el IVA
+# se calcula como la parte de ese total. Cambia el porcentaje con IVA_PORCENTAJE en el .env.
+IVA_PORCENTAJE = Decimal(os.getenv("IVA_PORCENTAJE", "19"))
+METODOS_PAGO = ("Efectivo", "Tarjeta", "Transferencia")
+METODO_PAGO_DEFECTO = "Efectivo"       # la página aún no pregunta el método: se puede enviar "metodo_pago"
+
+
+def _metodo_pago(d):
+    """(método, None) o (None, mensaje). Si el cliente no lo indica, se usa METODO_PAGO_DEFECTO."""
+    metodo = str(d.get("metodo_pago") or METODO_PAGO_DEFECTO).strip().capitalize()
+    return (metodo, None) if metodo in METODOS_PAGO else (None, "Elige un método de pago válido")
+
+
+def _facturar(cur, cid, lineas, comprobante, metodo):
+    """Registra la factura, su detalle y el pago DENTRO de la transacción en curso (cur): si algo falla,
+    se deshace todo junto con la cita o el pedido. `lineas` = [(id_producto, id_servicio, cantidad,
+    precio_unitario)]; en cada línea uno de los dos ids es None. Devuelve el id de la factura."""
+    total = sum(cantidad * precio for _, _, cantidad, precio in lineas)
+    iva = (Decimal(total) * IVA_PORCENTAJE / (100 + IVA_PORCENTAJE)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    momento = ahora()
+    cur.execute("INSERT INTO FACTURACION (ID_Cliente, FECHA, ImpuestosIVA, TotalPagar) VALUES (%s, %s, %s, %s)",
+                (cid, momento, iva, total))
+    factura_id = cur.lastrowid
+    for producto, servicio, cantidad, precio in lineas:
+        cur.execute("INSERT INTO DETALLE_FACTURA (ID_Producto, ID_Facturacion, ID_Servicio, Cantidad, "
+                    "PrecioUnitario) VALUES (%s, %s, %s, %s, %s)",
+                    (producto, factura_id, servicio, cantidad, precio))
+    cur.execute("INSERT INTO PAGO (ID_Facturacion, MetodoPago, ValorRecibido, CambioValorRecibido, "
+                "ComprobantePago, FechaPago) VALUES (%s, %s, %s, %s, %s, %s)",
+                (factura_id, metodo, total, 0, comprobante, momento))
+    return factura_id
+
+
 # ---------- Servicios y veterinarios ----------
 @bp.get("/api/cliente/servicios")
 @requiere_cliente
@@ -468,6 +503,9 @@ def agendar(cid):
         return _error("Elige la fecha y la hora")
     if (mensaje := _fuera_de_rango(fecha)):
         return _error(mensaje)
+    metodo, mensaje = _metodo_pago(d)
+    if mensaje:
+        return _error(mensaje)
 
     with db.transaccion() as cur:
         consulta = _consulta_de(cur)
@@ -476,7 +514,7 @@ def agendar(cid):
                        "AND CargoEmpleado LIKE %s FOR UPDATE", (vid, "Veterinari%"))
         mascota = consulta("SELECT ID_Mascota FROM MASCOTA WHERE ID_Mascota = %s AND ID_Cliente = %s",
                            (mid, cid))
-        servicio = consulta("SELECT DuracionServicio AS dur FROM CATALOGO_SERVICIOS "
+        servicio = consulta("SELECT DuracionServicio AS dur, CostoServicio AS costo FROM CATALOGO_SERVICIOS "
                             "WHERE ID_CataServicio = %s", (sid,))
         if not (vet and mascota and servicio):
             return _error("No encontramos la mascota, el servicio o el veterinario", 404)
@@ -488,6 +526,7 @@ def agendar(cid):
             "HoraReserva, EstadoCita) VALUES (%s, %s, %s, %s, %s, %s)",
             (vid, mid, sid, fecha, f"{d['hora']}:00", AGENDADA))
         rid = cur.lastrowid
+        _facturar(cur, cid, [(None, sid, 1, servicio[0]["costo"])], f"CIT-{rid}", metodo)
 
     cita = _listar_citas(cid, rid)[0]
     _notificar_cita(cita, cid, _cliente_actual(cid)["nombre"])   # MongoDB: si falla, la cita igual queda
@@ -623,7 +662,11 @@ def compras(cid):
 @bp.post("/api/cliente/compras")
 @requiere_cliente
 def comprar(cid):
-    carrito, mensaje = _leer_carrito(_cuerpo())
+    d = _cuerpo()
+    carrito, mensaje = _leer_carrito(d)
+    if mensaje:
+        return _error(mensaje)
+    metodo, mensaje = _metodo_pago(d)
     if mensaje:
         return _error(mensaje)
 
@@ -657,6 +700,8 @@ def comprar(cid):
             for pid, cant, valor in lineas:
                 cur.execute("INSERT INTO PEDIDO_DETALLE (ID_Pedido, ID_Producto, Cantidad, "
                             "PrecioUnitario) VALUES (%s, %s, %s, %s)", (pedido_id, pid, cant, valor))
+            _facturar(cur, cid, [(pid, None, cant, valor) for pid, cant, valor in lineas],
+                      f"PED-{pedido_id}", metodo)
     except _CompraInvalida as e:
         return _error(e.mensaje, e.codigo)      # la transacción ya hizo rollback
 

@@ -132,9 +132,9 @@ CREATE TABLE FACTURACION (
 
 CREATE TABLE DETALLE_FACTURA (
     ID_DetFactura    INT AUTO_INCREMENT NOT NULL,
-    ID_Producto      INT NOT NULL,
+    ID_Producto      INT NULL,
     ID_Facturacion   INT NOT NULL,
-    ID_Servicio      INT NOT NULL,
+    ID_Servicio      INT NULL,
     Cantidad         INT NOT NULL,
     PrecioUnitario   INT NOT NULL,
     PRIMARY KEY (ID_DetFactura),
