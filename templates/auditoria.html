@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Auditoría | PawCare</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+</head>
+<body>
+    <header class="barra">
+        <a class="marca" href="/">🐾 PawCare</a>
+        <nav aria-label="Principal">
+            <a href="/equipo">Administración</a>
+            <a href="/auditoria" class="activo">Auditoría</a>
+        </nav>
+        <div class="barra-usuario"><button class="btn btn-suave btn-chico" id="btn-salir">Salir</button></div>
+    </header>
+    <main class="contenedor">
+        <h1 class="titulo-pagina">Auditoría de operaciones</h1>
+        <p class="subtitulo">Consulta los cambios registrados en las tablas del sistema.</p>
+        {% if error %}<div class="aviso auditoria-aviso" role="status">{{ error }} Revisa la instalación indicada en la documentación.</div>{% endif %}
+        <form class="caja auditoria-filtros" method="get" action="/auditoria">
+            <label class="campo">Fecha inicial<input type="date" name="fecha_inicio" value="{{ filtros.get('fecha_inicio', '') }}"></label>
+            <label class="campo">Fecha final<input type="date" name="fecha_fin" value="{{ filtros.get('fecha_fin', '') }}"></label>
+            <label class="campo">Usuario<input type="text" name="usuario" maxlength="120" value="{{ filtros.get('usuario', '') }}" placeholder="Ej. Administrador:5"></label>
+            <label class="campo">Operación
+                <select name="operacion"><option value="">Todas</option>{% for op in ['INSERT', 'UPDATE', 'DELETE'] %}<option value="{{ op }}" {% if filtros.get('operacion', '')|upper == op %}selected{% endif %}>{{ op }}</option>{% endfor %}</select>
+            </label>
+            <label class="campo">Tabla
+                <select name="tabla"><option value="">Todas</option>{% for tabla in tablas %}<option value="{{ tabla }}" {% if filtros.get('tabla', '')|lower == tabla %}selected{% endif %}>{{ tabla }}</option>{% endfor %}</select>
+            </label>
+            <div class="auditoria-botones"><button class="btn btn-primario" type="submit">Filtrar</button><a class="btn btn-suave" href="/auditoria">Limpiar</a></div>
+        </form>
+        <p class="auditoria-conteo">{{ registros|length }} registro(s), máximo 200 por consulta.</p>
+        <div class="tabla-wrap auditoria-tabla">
+            <table>
+                <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Operación</th><th>Tabla</th><th>ID registro</th><th>Detalle</th></tr></thead>
+                <tbody>
+                {% for fila in registros %}
+                    <tr>
+                        <td>{{ fila.fecha_hora.strftime('%Y-%m-%d %H:%M:%S') if fila.fecha_hora else '' }}</td>
+                        <td>{{ fila.usuario }}</td><td><span class="auditoria-op auditoria-op-{{ fila.operacion|lower }}">{{ fila.operacion }}</span></td>
+                        <td>{{ fila.nombre_tabla }}</td><td>{{ fila.id_registro }}</td>
+                        <td><details><summary>Ver valores</summary><div class="auditoria-json"><strong>Antes</strong><pre>{{ fila.datos_anteriores|tojson(indent=2) if fila.datos_anteriores is not none else '—' }}</pre><strong>Después</strong><pre>{{ fila.datos_nuevos|tojson(indent=2) if fila.datos_nuevos is not none else '—' }}</pre></div></details></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="auditoria-vacia">{% if not error %}No hay operaciones para mostrar con estos filtros.{% endif %}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
+    <script src="{{ url_for('static', filename='comun.js') }}"></script>
+</body>
+</html>

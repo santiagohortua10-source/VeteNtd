@@ -85,6 +85,20 @@ def admin_id_actual():
     return t[0] if t and t[1] == "Administrador" else None
 
 
+def identidad_auditoria_actual():
+    """Identidad para auditoría tomada exclusivamente de un JWT firmado válido."""
+    try:
+        t = _datos_token()
+    except RuntimeError:
+        return "ANONIMO"
+    if not t:
+        return "ANONIMO"
+    sujeto_id, rol = t
+    if rol not in ("Cliente", "Veterinario", "Administrador"):
+        return "ANONIMO"
+    return f"{rol}:{sujeto_id}"
+
+
 def solo_admin(vista):
     """Protege el panel de administración: exige una sesión (JWT) con rol Administrador.
     Sin sesión: las rutas /api/ responden 401 y las páginas redirigen al ingreso común (/cliente)."""

@@ -1,10 +1,11 @@
 import os
 import re
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
 
 import admin
 import auth
+import auditoria
 import clientes
 import db
 import mongo
@@ -17,6 +18,20 @@ app = Flask(__name__)
 app.register_blueprint(clientes.bp)
 app.register_blueprint(veterinarios.bp)
 app.register_blueprint(admin.bp)
+
+
+@app.before_request
+def _preparar_identidad_auditoria():
+    g._token_auditoria = db.establecer_usuario_auditoria(
+        auth.identidad_auditoria_actual()
+    )
+
+
+@app.teardown_request
+def _limpiar_identidad_auditoria(_error=None):
+    token = getattr(g, "_token_auditoria", None)
+    if token is not None:
+        db.restablecer_usuario_auditoria(token)
 
 # La página muestra servicios y productos en una sola lista, pero en la base de datos
 # viven en dos tablas. Para que los ids no choquen, cada item usa un prefijo:
@@ -182,6 +197,25 @@ def inicio():
 def equipo():
     return render_template('index.html', servicios=listar_items(),
                            no_leidas=notificaciones.contar_no_leidas_seguro())
+
+
+@app.route('/auditoria')
+@auth.solo_admin
+def reporte_auditoria():
+    try:
+        registros = auditoria.consultar_registros(request.args)
+    except auditoria.FiltroInvalido as exc:
+        abort(400, description=str(exc))
+    except db.Error:
+        return render_template(
+            'auditoria.html', registros=[], tablas=auditoria.TABLAS_NEGOCIO,
+            error='La tabla de auditoría aún no está instalada en la base configurada.',
+            filtros=request.args,
+        ), 503
+    return render_template(
+        'auditoria.html', registros=registros, tablas=auditoria.TABLAS_NEGOCIO,
+        error=None, filtros=request.args,
+    )
 
 
 @app.route('/api/servicios')

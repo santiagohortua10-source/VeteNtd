@@ -277,6 +277,24 @@ p { margin: 0; }
 .pestana[aria-selected="true"] { color: var(--verde); border-bottom-color: var(--verde); }
 
 .tabla-wrap { margin-top: 1.25rem; background: var(--panel); border: 1px solid var(--borde); border-radius: 16px; overflow-x: auto; }
+
+/* ---------- Reporte de auditoría ---------- */
+.auditoria-filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: .8rem; align-items: end; }
+.auditoria-filtros .campo { margin: 0; }
+.auditoria-filtros input, .auditoria-filtros select { width: 100%; min-height: 42px; padding: .6rem .7rem; border-radius: 10px; background: var(--panel-2); color: var(--texto); border: 1px solid var(--borde); font: inherit; }
+.auditoria-botones { display: flex; gap: .5rem; align-items: center; }
+.auditoria-conteo { color: var(--suave); font-size: .9rem; margin: 1.2rem 0 .2rem; }
+.auditoria-tabla table { width: 100%; border-collapse: collapse; min-width: 850px; }
+.auditoria-tabla th, .auditoria-tabla td { padding: .75rem; text-align: left; border-bottom: 1px solid var(--borde); vertical-align: top; }
+.auditoria-tabla th { color: var(--suave); font-size: .83rem; }
+.auditoria-op { font-size: .78rem; font-weight: 800; }
+.auditoria-op-insert { color: var(--verde); }
+.auditoria-op-update { color: #f5c96a; }
+.auditoria-op-delete { color: var(--rojo); }
+.auditoria-json { max-width: 560px; padding: .6rem 0; }
+.auditoria-json pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; padding: .6rem; background: var(--panel-2); border-radius: 8px; font-size: .78rem; }
+.auditoria-vacia { text-align: center !important; color: var(--suave); padding: 2rem !important; }
+.auditoria-aviso { margin-bottom: 1rem; }
 .tabla-vets { width: 100%; min-width: 720px; border-collapse: collapse; }
 .tabla-vets th {
     text-align: left; padding: .8rem 1rem; font-size: .78rem; text-transform: uppercase;

@@ -1,12 +1,26 @@
 """Conexión a MySQL y funciones auxiliares para consultar/modificar datos."""
 import os
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 import mysql.connector
 from dotenv import load_dotenv
 from mysql.connector import Error, IntegrityError  # noqa: F401  (se reexportan para app.py)
 
 load_dotenv()
+
+# El valor se conserva por contexto de solicitud, nunca en una conexión global.
+# Cada conexión nueva recibe su propia variable MySQL antes del primer SQL.
+_usuario_auditoria = ContextVar("usuario_auditoria", default="SISTEMA")
+
+
+def establecer_usuario_auditoria(usuario):
+    """Establece la identidad confiable de la solicitud actual y devuelve token de reset."""
+    return _usuario_auditoria.set(str(usuario)[:120] if usuario else "ANONIMO")
+
+
+def restablecer_usuario_auditoria(token):
+    _usuario_auditoria.reset(token)
 
 
 def _configuracion():
@@ -15,7 +29,7 @@ def _configuracion():
         "port": int(os.getenv("DB_PORT", "3306")),
         "user": os.getenv("DB_USER", "root"),
         "password": os.getenv("DB_PASSWORD", ""),
-        "database": os.getenv("DB_NAME", "veterinaria"),
+        "database": os.getenv("DB_NAME", "ahp_veterinaria"),
         "charset": "utf8mb4",
         "connection_timeout": 5,
     }
@@ -25,6 +39,11 @@ def _configuracion():
 def conexion():
     conn = mysql.connector.connect(**_configuracion())
     try:
+        cur = conn.cursor()
+        try:
+            cur.execute("SET @usuario_auditoria = %s", (_usuario_auditoria.get(),))
+        finally:
+            cur.close()
         yield conn
     finally:
         conn.close()
